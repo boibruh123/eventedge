@@ -381,16 +381,7 @@ function sendText(res, status, contentType, body, extraHeaders = {}) {
   res.end(body);
 }
 
-function redirect(res, location) {
-  res.statusCode = 302;
-  res.setHeader("location", location);
-  res.end();
-}
-
 export default async function handler(req, res) {
-  const url = new URL(req.url, `https://${req.headers.host || "eventedge.app"}`);
-  if (url.pathname === "/" || url.pathname === "") return redirect(res, "/index.html");
-
   const route = getRoute(req);
   const dashboard = buildDashboard();
 

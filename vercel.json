@@ -4,10 +4,4 @@
     {
       "source": "/api/:path*",
       "destination": "/api/index.mjs"
-    },
-    {
-      "source": "/:path*",
-      "destination": "/index.html"
     }
-  ]
-}

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import type { ReactElement, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BadgeDollarSign,
   BarChart3,
@@ -12,30 +12,35 @@ import {
   Gamepad2,
   Gauge,
   LogIn,
-  Pencil,
+  Megaphone,
   Play,
   Plus,
-  RefreshCw,
-  ShieldCheck,
   Sparkles,
   Trophy,
   Users,
-  Video,
-  Wand2
+  Video
 } from "lucide-react";
-import { getBrowserSupabase } from "@/lib/supabase";
-import { categories, getDailyItems } from "@/lib/items";
+import { getDailyItems } from "@/lib/items";
 import { formatCurrency, formatPercent, scoreGuess } from "@/lib/scoring";
 import type { GameItem, LeaderboardEntry, RoundResult } from "@/lib/types";
 
-type View = "home" | "play" | "leaderboard" | "admin" | "rooms";
+type View = "home" | "play" | "leaderboard" | "rooms";
 
 type Props = {
   items: GameItem[];
   leaderboard: LeaderboardEntry[];
 };
 
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function lockKey(date = todayKey()) {
+  return `guesstheprice:daily:${date}`;
+}
+
 export function GuessThePriceApp({ items, leaderboard }: Props) {
+  const date = todayKey();
   const dailyItems = useMemo(() => getDailyItems(new Date(), items), [items]);
   const [view, setView] = useState<View>("home");
   const [round, setRound] = useState(0);
@@ -43,6 +48,10 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   const [revealed, setRevealed] = useState(false);
   const [results, setResults] = useState<RoundResult[]>([]);
   const [player, setPlayer] = useState("Guest");
+  const [name, setName] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [dailyComplete, setDailyComplete] = useState(false);
+  const [localLeaders, setLocalLeaders] = useState<LeaderboardEntry[]>([]);
   const [roomCode, setRoomCode] = useState("PRICE-4821");
   const current = dailyItems[round];
   const latest = results[results.length - 1];
@@ -51,12 +60,48 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     ? results.reduce((sum, result) => sum + result.accuracy, 0) / results.length
     : 0;
   const finished = round >= dailyItems.length;
+  const board = [...localLeaders, ...leaderboard].sort((a, b) => b.score - a.score);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(lockKey(date));
+    if (saved) {
+      setDailyComplete(true);
+      const parsed = JSON.parse(saved) as LeaderboardEntry;
+      if (parsed.player_name !== "Pending") {
+        setLocalLeaders([parsed]);
+        setSubmitted(true);
+        setPlayer(parsed.player_name);
+      }
+    }
+  }, [date]);
+
+  useEffect(() => {
+    if (!finished || dailyComplete || results.length !== dailyItems.length) return;
+
+    const pendingEntry: LeaderboardEntry = {
+      id: `local-${date}`,
+      player_name: "Pending",
+      score: finalScore,
+      accuracy: Number(averageAccuracy.toFixed(1)),
+      mode: "daily",
+      created_at: date
+    };
+
+    window.localStorage.setItem(lockKey(date), JSON.stringify(pendingEntry));
+    setDailyComplete(true);
+  }, [averageAccuracy, dailyComplete, dailyItems.length, date, finalScore, finished, results.length]);
 
   function startGame() {
+    if (dailyComplete) {
+      setView("leaderboard");
+      return;
+    }
+
     setRound(0);
     setGuess("");
     setRevealed(false);
     setResults([]);
+    setSubmitted(false);
     setView("play");
   }
 
@@ -74,27 +119,28 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     setRound((value) => value + 1);
   }
 
-  async function loginWithGoogle() {
-    const supabase = getBrowserSupabase();
-    if (!supabase) {
-      setPlayer("Guest Pro");
-      return;
-    }
+  function saveLeaderboardName() {
+    const cleanName = name.trim().slice(0, 24) || "Anonymous";
+    const entry: LeaderboardEntry = {
+      id: `local-${date}`,
+      player_name: cleanName,
+      score: finalScore,
+      accuracy: Number(averageAccuracy.toFixed(1)),
+      mode: "daily",
+      created_at: date
+    };
 
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: window.location.origin }
-    });
+    window.localStorage.setItem(lockKey(date), JSON.stringify(entry));
+    setLocalLeaders([entry]);
+    setPlayer(cleanName);
+    setDailyComplete(true);
+    setSubmitted(true);
   }
 
   return (
     <main className="min-h-screen overflow-hidden bg-night text-white">
       <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-5">
-        <button
-          className="flex items-center gap-3 text-left"
-          onClick={() => setView("home")}
-          aria-label="Go to home"
-        >
+        <button className="flex items-center gap-3 text-left" onClick={() => setView("home")} aria-label="Go to home">
           <span className="grid h-11 w-11 place-items-center rounded-[8px] bg-primary text-night shadow-glow">
             <BadgeDollarSign className="h-6 w-6" />
           </span>
@@ -113,14 +159,8 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
           <NavButton active={view === "rooms"} onClick={() => setView("rooms")} icon={<Users />}>
             Rooms
           </NavButton>
-          <NavButton active={view === "admin"} onClick={() => setView("admin")} icon={<ShieldCheck />}>
-            Admin
-          </NavButton>
         </nav>
-        <button
-          onClick={loginWithGoogle}
-          className="flex h-11 items-center gap-2 rounded-[8px] border border-white/10 bg-white/10 px-4 text-sm font-bold text-white transition hover:border-primary/50 hover:bg-primary/10"
-        >
+        <button className="flex h-11 items-center gap-2 rounded-[8px] border border-white/10 bg-white/10 px-4 text-sm font-bold text-white">
           <LogIn className="h-4 w-4" />
           {player}
         </button>
@@ -131,23 +171,23 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
           <div className="max-w-3xl">
             <div className="mb-5 inline-flex items-center gap-2 rounded-[8px] border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-bold text-primary">
               <CalendarDays className="h-4 w-4" />
-              Same 10 items for everyone today
+              {dailyComplete ? "Daily challenge complete" : "Same 10 items for everyone today"}
             </div>
             <h1 className="text-balance text-5xl font-black tracking-normal sm:text-6xl lg:text-7xl">
               Guess real prices. Beat the market. Climb the board.
             </h1>
             <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-300">
-              A polished MVP for price-guessing rounds across houses, cars, watches, sneakers, trading
-              cards, electronics, collectibles, and more. Every item carries a price reference so the
-              game feels fair.
+              One daily run, ten verified-price items, and no second chances until tomorrow.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <button
                 onClick={startGame}
-                className="flex h-14 items-center gap-3 rounded-[8px] bg-primary px-6 text-base font-black text-night shadow-glow transition hover:scale-[1.02]"
+                className={`flex h-14 items-center gap-3 rounded-[8px] px-6 text-base font-black shadow-glow transition ${
+                  dailyComplete ? "bg-white/10 text-slate-300" : "bg-primary text-night hover:scale-[1.02]"
+                }`}
               >
                 <Play className="h-5 w-5 fill-current" />
-                Play Daily Challenge
+                {dailyComplete ? "View Today's Board" : "Play Daily Challenge"}
               </button>
               <button
                 onClick={() => setView("rooms")}
@@ -157,34 +197,41 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
                 Create Room
               </button>
             </div>
+            {dailyComplete && (
+              <p className="mt-4 max-w-xl rounded-[8px] border border-accent/30 bg-accent/10 p-3 text-sm font-bold text-orange-100">
+                You already played today&apos;s challenge. Come back tomorrow for a fresh set.
+              </p>
+            )}
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              <Metric icon={<Gauge />} label="10 rounds" value="Fast play" />
+              <Metric icon={<Gauge />} label="10 rounds" value="Daily run" />
               <Metric icon={<Crown />} label="Top score" value="10,000" />
               <Metric icon={<Sparkles />} label="Sources" value="Verified" />
             </div>
+            <div className="mt-5">
+              <AdSlot label="Homepage banner ad" size="wide" />
+            </div>
           </div>
-          <div className="glass relative overflow-hidden rounded-[8px] p-4 shadow-2xl">
-            <div className="relative aspect-[4/5] overflow-hidden rounded-[8px]">
-              <Image
-                src={dailyItems[0].image}
-                alt={dailyItems[0].title}
-                fill
-                priority
-                className="object-cover"
-                sizes="(min-width: 1024px) 40vw, 90vw"
-              />
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-night via-night/75 to-transparent p-5">
-                <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-primary">
-                  <Car className="h-4 w-4" />
-                  Today&apos;s opener
-                </div>
-                <h2 className="text-3xl font-black">{dailyItems[0].title}</h2>
-                <div className="mt-4 flex items-center justify-between rounded-[8px] bg-white/10 p-3">
-                  <span className="text-sm text-slate-300">Your guess</span>
-                  <span className="font-mono text-xl font-black text-accent">$?</span>
+          <div className="space-y-4">
+            <div className="glass relative overflow-hidden rounded-[8px] p-4 shadow-2xl">
+              <div className="relative aspect-[4/5] overflow-hidden rounded-[8px]">
+                <Image
+                  src={dailyItems[0].image}
+                  alt={dailyItems[0].title}
+                  fill
+                  priority
+                  className="object-cover"
+                  sizes="(min-width: 1024px) 40vw, 90vw"
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-night via-night/75 to-transparent p-5">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-primary">
+                    <Car className="h-4 w-4" />
+                    Today&apos;s opener
+                  </div>
+                  <h2 className="text-3xl font-black">{dailyItems[0].title}</h2>
                 </div>
               </div>
             </div>
+            <AdSlot label="Sponsored item placement" />
           </div>
         </section>
       )}
@@ -196,7 +243,10 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
               score={finalScore}
               accuracy={averageAccuracy}
               results={results}
-              onReplay={startGame}
+              submitted={submitted}
+              name={name}
+              setName={setName}
+              onSubmit={saveLeaderboardName}
               onLeaderboard={() => setView("leaderboard")}
             />
           ) : (
@@ -219,103 +269,86 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
                     className="object-cover"
                     sizes="(min-width: 1024px) 70vw, 100vw"
                   />
-                  <div className="absolute left-4 top-4 rounded-[8px] bg-night/100 px-3 py-2 text-sm font-bold">
+                  <div className="absolute left-4 top-4 rounded-[8px] bg-night px-3 py-2 text-sm font-bold">
                     {current.category}
                   </div>
                 </div>
               </div>
 
-              <aside className="glass rounded-[8px] p-5">
-                <div className="mb-5 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-400">Current score</p>
-                    <p className="font-mono text-4xl font-black text-primary">{finalScore}</p>
-                  </div>
-                  <Trophy className="h-10 w-10 text-accent" />
-                </div>
-
-                {!revealed ? (
-                  <div className="space-y-4">
-                    <label className="block text-sm font-bold text-slate-300" htmlFor="guess">
-                      Enter market price
-                    </label>
-                    <div className="flex h-16 items-center rounded-[8px] border border-white/10 bg-white/10 px-4 focus-within:border-primary">
-                      <span className="text-2xl font-black text-slate-400">$</span>
-                      <input
-                        id="guess"
-                        inputMode="numeric"
-                        className="price-input h-full w-full bg-transparent px-3 text-3xl font-black outline-none"
-                        value={guess}
-                        onChange={(event) => setGuess(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") submitGuess();
-                        }}
-                        placeholder="0"
-                      />
+              <aside className="space-y-4">
+                <div className="glass rounded-[8px] p-5">
+                  <div className="mb-5 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-slate-400">Current score</p>
+                      <p className="font-mono text-4xl font-black text-primary">{finalScore}</p>
                     </div>
-                    <button
-                      onClick={submitGuess}
-                      className="flex h-14 w-full items-center justify-center gap-2 rounded-[8px] bg-primary px-5 py-4 font-black text-night transition hover:scale-[1.01]"
-                    >
-                      Submit Guess
-                    </button>
+                    <Trophy className="h-10 w-10 text-accent" />
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <Reveal label="Actual price" value={formatCurrency(current.price)} tone="primary" />
-                    <Reveal label="Your guess" value={formatCurrency(latest.guess || 0)} />
-                    <Reveal label="Accuracy" value={formatPercent(latest.accuracy)} />
-                    <Reveal label="Points earned" value={`+${latest.points}`} tone="accent" />
-                    <a
-                      href={current.source}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block rounded-[8px] border border-white/10 p-3 text-sm text-slate-300 transition hover:border-primary/50 hover:text-white"
-                    >
-                      Price reference source
-                    </a>
-                    <button
-                      onClick={nextRound}
-                      className="flex w-full items-center justify-center gap-2 rounded-[8px] bg-accent px-5 py-4 font-black text-white transition hover:scale-[1.01]"
-                    >
-                      {round === 9 ? "See Final Score" : "Next Item"}
-                    </button>
-                  </div>
-                )}
 
-                <div className="mt-6 rounded-[8px] border border-white/10 bg-white/5 p-4">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-300">
-                    <Video className="h-4 w-4 text-accent" />
-                    Rewarded video placeholder
-                  </div>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Future ad slot: earn one hint or one double-points round.
-                  </p>
+                  {!revealed ? (
+                    <div className="space-y-4">
+                      <label className="block text-sm font-bold text-slate-300" htmlFor="guess">
+                        Enter market price
+                      </label>
+                      <div className="flex h-16 items-center rounded-[8px] border border-white/10 bg-white/10 px-4 focus-within:border-primary">
+                        <span className="text-2xl font-black text-slate-400">$</span>
+                        <input
+                          id="guess"
+                          inputMode="numeric"
+                          className="price-input h-full w-full bg-transparent px-3 text-3xl font-black outline-none"
+                          value={guess}
+                          onChange={(event) => setGuess(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") submitGuess();
+                          }}
+                          placeholder="0"
+                        />
+                      </div>
+                      <button
+                        onClick={submitGuess}
+                        className="flex h-14 w-full items-center justify-center rounded-[8px] bg-primary px-5 py-4 font-black text-night transition hover:scale-[1.01]"
+                      >
+                        Submit Guess
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <Reveal label="Actual price" value={formatCurrency(current.price)} tone="primary" />
+                      <Reveal label="Your guess" value={formatCurrency(latest.guess || 0)} />
+                      <Reveal label="Accuracy" value={formatPercent(latest.accuracy)} />
+                      <Reveal label="Points earned" value={`+${latest.points}`} tone="accent" />
+                      <a
+                        href={current.source}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block rounded-[8px] border border-white/10 p-3 text-sm text-slate-300 transition hover:border-primary/50 hover:text-white"
+                      >
+                        Price reference source
+                      </a>
+                      <button
+                        onClick={nextRound}
+                        className="flex w-full items-center justify-center rounded-[8px] bg-accent px-5 py-4 font-black text-white transition hover:scale-[1.01]"
+                      >
+                        {round === 9 ? "Finish Challenge" : "Next Item"}
+                      </button>
+                    </div>
+                  )}
                 </div>
+                <AdSlot label="Rewarded video ad slot" icon={<Video className="h-4 w-4 text-accent" />} />
+                <AdSlot label="Sidebar display ad" />
               </aside>
             </div>
           )}
         </section>
       )}
 
-      {view === "leaderboard" && <Leaderboard leaderboard={leaderboard} />}
+      {view === "leaderboard" && <Leaderboard leaderboard={board} dailyComplete={dailyComplete} />}
       {view === "rooms" && <Rooms roomCode={roomCode} setRoomCode={setRoomCode} />}
-      {view === "admin" && <Admin items={items} />}
     </main>
   );
 }
 
-function NavButton({
-  active,
-  onClick,
-  icon,
-  children
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: ReactElement;
-  children: ReactNode;
-}) {
+function NavButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: ReactElement; children: ReactNode }) {
   return (
     <button
       onClick={onClick}
@@ -352,17 +385,35 @@ function Reveal({ label, value, tone }: { label: string; value: string; tone?: "
   );
 }
 
+function AdSlot({ label, size, icon }: { label: string; size?: "wide"; icon?: ReactElement }) {
+  return (
+    <div className={`rounded-[8px] border border-dashed border-white/20 bg-white/5 p-4 ${size === "wide" ? "min-h-24" : "min-h-32"}`}>
+      <div className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-300">
+        {icon ?? <Megaphone className="h-4 w-4 text-accent" />}
+        {label}
+      </div>
+      <p className="text-sm leading-6 text-slate-500">Reserved for future ad network, sponsor creative, or rewarded hint placement.</p>
+    </div>
+  );
+}
+
 function FinalScore({
   score,
   accuracy,
   results,
-  onReplay,
+  submitted,
+  name,
+  setName,
+  onSubmit,
   onLeaderboard
 }: {
   score: number;
   accuracy: number;
   results: RoundResult[];
-  onReplay: () => void;
+  submitted: boolean;
+  name: string;
+  setName: (value: string) => void;
+  onSubmit: () => void;
   onLeaderboard: () => void;
 }) {
   return (
@@ -375,15 +426,31 @@ function FinalScore({
           <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Daily complete</p>
           <h2 className="mt-2 text-5xl font-black">{score} points</h2>
           <p className="mt-3 text-slate-300">Average accuracy: {formatPercent(accuracy)}</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button onClick={onReplay} className="flex items-center gap-2 rounded-[8px] bg-primary px-5 py-3 font-black text-night">
-              <RefreshCw className="h-4 w-4" />
-              Replay
-            </button>
-            <button onClick={onLeaderboard} className="flex items-center gap-2 rounded-[8px] border border-white/10 px-5 py-3 font-bold">
+          {!submitted ? (
+            <div className="mt-6 rounded-[8px] border border-white/10 bg-white/5 p-4">
+              <label className="block text-sm font-bold text-slate-300" htmlFor="leaderboard-name">
+                Enter your leaderboard name
+              </label>
+              <input
+                id="leaderboard-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={24}
+                className="mt-3 h-12 w-full rounded-[8px] border border-white/10 bg-night px-4 font-bold outline-none focus:border-primary"
+                placeholder="Your name"
+              />
+              <button onClick={onSubmit} className="mt-3 w-full rounded-[8px] bg-primary px-5 py-3 font-black text-night">
+                Save Score
+              </button>
+            </div>
+          ) : (
+            <button onClick={onLeaderboard} className="mt-6 flex items-center gap-2 rounded-[8px] border border-white/10 px-5 py-3 font-bold">
               <Trophy className="h-4 w-4" />
-              Leaderboard
+              View Leaderboard
             </button>
+          )}
+          <div className="mt-5">
+            <AdSlot label="Post-game ad slot" />
           </div>
         </div>
         <div className="space-y-2">
@@ -403,13 +470,13 @@ function FinalScore({
   );
 }
 
-function Leaderboard({ leaderboard }: { leaderboard: LeaderboardEntry[] }) {
+function Leaderboard({ leaderboard, dailyComplete }: { leaderboard: LeaderboardEntry[]; dailyComplete: boolean }) {
   return (
     <section className="mx-auto grid w-full max-w-7xl gap-5 px-5 pb-12 lg:grid-cols-[1fr_340px]">
       <div className="glass rounded-[8px] p-5">
         <div className="mb-5 flex items-center justify-between">
           <div>
-            <p className="text-sm font-bold text-primary">Global leaderboard</p>
+            <p className="text-sm font-bold text-primary">{dailyComplete ? "Your daily score is locked" : "Global leaderboard"}</p>
             <h2 className="text-3xl font-black">Top players</h2>
           </div>
           <BarChart3 className="h-9 w-9 text-accent" />
@@ -426,9 +493,10 @@ function Leaderboard({ leaderboard }: { leaderboard: LeaderboardEntry[] }) {
         </div>
       </div>
       <div className="space-y-4">
+        <AdSlot label="Leaderboard top banner ad" />
         <BoardCard title="Weekly" value="31,420" detail="Total points this week" />
         <BoardCard title="Monthly" value="128,900" detail="Total points this month" />
-        <BoardCard title="Featured Daily" value="Sponsor slot" detail="Placeholder for paid challenge placement" />
+        <BoardCard title="Featured Daily" value="Sponsor slot" detail="Paid challenge placement placeholder" />
       </div>
     </section>
   );
@@ -476,57 +544,6 @@ function Rooms({ roomCode, setRoomCode }: { roomCode: string; setRoomCode: (valu
             <p className="mt-2 text-sm text-slate-400">Live score</p>
           </div>
         ))}
-      </div>
-    </section>
-  );
-}
-
-function Admin({ items }: { items: GameItem[] }) {
-  return (
-    <section className="mx-auto grid w-full max-w-7xl gap-5 px-5 pb-12 lg:grid-cols-[360px_1fr]">
-      <div className="glass rounded-[8px] p-5">
-        <div className="mb-5 flex items-center gap-3">
-          <Wand2 className="h-8 w-8 text-primary" />
-          <div>
-            <p className="text-sm font-bold text-primary">AI content engine</p>
-            <h2 className="text-2xl font-black">Generate item</h2>
-          </div>
-        </div>
-        <div className="space-y-3">
-          <input className="h-12 w-full rounded-[8px] border border-white/10 bg-white/10 px-4 outline-none focus:border-primary" placeholder="Item title" />
-          <select className="h-12 w-full rounded-[8px] border border-white/10 bg-white/10 px-4 outline-none focus:border-primary">
-            {categories.map((category) => (
-              <option key={category}>{category}</option>
-            ))}
-          </select>
-          <input className="h-12 w-full rounded-[8px] border border-white/10 bg-white/10 px-4 outline-none focus:border-primary" placeholder="Verified price" />
-          <input className="h-12 w-full rounded-[8px] border border-white/10 bg-white/10 px-4 outline-none focus:border-primary" placeholder="Source URL" />
-          <button className="flex w-full items-center justify-center gap-2 rounded-[8px] bg-primary px-5 py-4 font-black text-night">
-            <Sparkles className="h-4 w-4" />
-            Save Draft Item
-          </button>
-        </div>
-      </div>
-      <div className="glass rounded-[8px] p-5">
-        <div className="mb-5 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-primary">Operations</p>
-            <h2 className="text-3xl font-black">Item database</h2>
-          </div>
-          <Pencil className="h-8 w-8 text-accent" />
-        </div>
-        <div className="overflow-hidden rounded-[8px] border border-white/10">
-          {items.slice(0, 8).map((item) => (
-            <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-white/10 p-4 last:border-b-0">
-              <div>
-                <p className="font-bold">{item.title}</p>
-                <p className="text-sm text-slate-400">{item.category} · {item.difficulty}</p>
-              </div>
-              <span className="hidden font-mono font-black text-primary sm:block">{formatCurrency(item.price)}</span>
-              <button className="rounded-[8px] border border-white/10 px-3 py-2 text-sm font-bold text-slate-300">Edit</button>
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );

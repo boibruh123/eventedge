@@ -20,9 +20,11 @@ import {
   Users,
   Video
 } from "lucide-react";
+import { defaultAds } from "@/lib/ads";
+import { CONTENT_KEYS } from "@/lib/content-store";
 import { getDailyItems } from "@/lib/items";
 import { formatCurrency, formatPercent, scoreGuess } from "@/lib/scoring";
-import type { GameItem, LeaderboardEntry, RoundResult } from "@/lib/types";
+import type { AdPlacement, GameItem, LeaderboardEntry, RoundResult } from "@/lib/types";
 
 type View = "home" | "play" | "leaderboard" | "rooms";
 
@@ -41,7 +43,9 @@ function lockKey(date = todayKey()) {
 
 export function GuessThePriceApp({ items, leaderboard }: Props) {
   const date = todayKey();
-  const dailyItems = useMemo(() => getDailyItems(new Date(), items), [items]);
+  const [catalog, setCatalog] = useState(items);
+  const [ads, setAds] = useState(defaultAds);
+  const dailyItems = useMemo(() => getDailyItems(new Date(), catalog), [catalog]);
   const [view, setView] = useState<View>("home");
   const [round, setRound] = useState(0);
   const [guess, setGuess] = useState("");
@@ -62,6 +66,10 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   const finished = round >= dailyItems.length;
   const board = [...localLeaders, ...leaderboard].sort((a, b) => b.score - a.score);
 
+  const adByPlacement = (placement: string) =>
+    ads.find((ad) => ad.placement === placement && ad.active) ??
+    defaultAds.find((ad) => ad.placement === placement && ad.active);
+
   useEffect(() => {
     const saved = window.localStorage.getItem(lockKey(date));
     if (saved) {
@@ -74,6 +82,45 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       }
     }
   }, [date]);
+
+  useEffect(() => {
+    async function loadContent() {
+      const savedItems = window.localStorage.getItem(CONTENT_KEYS.items);
+      const savedAds = window.localStorage.getItem(CONTENT_KEYS.ads);
+
+      if (savedItems) setCatalog(JSON.parse(savedItems) as GameItem[]);
+      if (savedAds) setAds(JSON.parse(savedAds) as AdPlacement[]);
+
+      const [itemsResponse, adsResponse] = await Promise.allSettled([fetch("/api/items"), fetch("/api/ads")]);
+
+      if (itemsResponse.status === "fulfilled" && itemsResponse.value.ok && !savedItems) {
+        const payload = await itemsResponse.value.json();
+        if (Array.isArray(payload.items)) setCatalog(payload.items);
+      }
+
+      if (adsResponse.status === "fulfilled" && adsResponse.value.ok && !savedAds) {
+        const payload = await adsResponse.value.json();
+        if (Array.isArray(payload.ads)) setAds(payload.ads);
+      }
+    }
+
+    function syncFromStorage(event?: StorageEvent) {
+      if (event && event.key && event.key !== CONTENT_KEYS.items && event.key !== CONTENT_KEYS.ads) return;
+      const savedItems = window.localStorage.getItem(CONTENT_KEYS.items);
+      const savedAds = window.localStorage.getItem(CONTENT_KEYS.ads);
+      if (savedItems) setCatalog(JSON.parse(savedItems) as GameItem[]);
+      if (savedAds) setAds(JSON.parse(savedAds) as AdPlacement[]);
+    }
+
+    const contentHandler = () => syncFromStorage();
+    loadContent();
+    window.addEventListener("storage", syncFromStorage);
+    window.addEventListener(CONTENT_KEYS.event, contentHandler);
+    return () => {
+      window.removeEventListener("storage", syncFromStorage);
+      window.removeEventListener(CONTENT_KEYS.event, contentHandler);
+    };
+  }, []);
 
   useEffect(() => {
     if (!finished || dailyComplete || results.length !== dailyItems.length) return;
@@ -208,7 +255,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
               <Metric icon={<Sparkles />} label="Sources" value="Verified" />
             </div>
             <div className="mt-5">
-              <AdSlot label="Homepage banner ad" size="wide" />
+              <AdSlot label="Homepage banner ad" size="wide" ad={adByPlacement("Homepage banner ad")} />
             </div>
           </div>
           <div className="space-y-4">
@@ -231,7 +278,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
                 </div>
               </div>
             </div>
-            <AdSlot label="Sponsored item placement" />
+            <AdSlot label="Sponsored item placement" ad={adByPlacement("Sponsored item placement")} />
           </div>
         </section>
       )}
@@ -248,6 +295,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
               setName={setName}
               onSubmit={saveLeaderboardName}
               onLeaderboard={() => setView("leaderboard")}
+              postGameAd={adByPlacement("Post-game ad slot")}
             />
           ) : (
             <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
@@ -334,15 +382,21 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
                     </div>
                   )}
                 </div>
-                <AdSlot label="Rewarded video ad slot" icon={<Video className="h-4 w-4 text-accent" />} />
-                <AdSlot label="Sidebar display ad" />
+                <AdSlot label="Rewarded video ad slot" icon={<Video className="h-4 w-4 text-accent" />} ad={adByPlacement("Rewarded video ad slot")} />
+                <AdSlot label="Sidebar display ad" ad={adByPlacement("Sidebar display ad")} />
               </aside>
             </div>
           )}
         </section>
       )}
 
-      {view === "leaderboard" && <Leaderboard leaderboard={board} dailyComplete={dailyComplete} />}
+      {view === "leaderboard" && (
+        <Leaderboard
+          leaderboard={board}
+          dailyComplete={dailyComplete}
+          leaderboardAd={adByPlacement("Leaderboard top banner ad")}
+        />
+      )}
       {view === "rooms" && <Rooms roomCode={roomCode} setRoomCode={setRoomCode} />}
     </main>
   );
@@ -385,14 +439,20 @@ function Reveal({ label, value, tone }: { label: string; value: string; tone?: "
   );
 }
 
-function AdSlot({ label, size, icon }: { label: string; size?: "wide"; icon?: ReactElement }) {
+function AdSlot({ label, size, icon, ad }: { label: string; size?: "wide"; icon?: ReactElement; ad?: AdPlacement }) {
   return (
     <div className={`rounded-[8px] border border-dashed border-white/20 bg-white/5 p-4 ${size === "wide" ? "min-h-24" : "min-h-32"}`}>
       <div className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-300">
         {icon ?? <Megaphone className="h-4 w-4 text-accent" />}
         {label}
       </div>
-      <p className="text-sm leading-6 text-slate-500">Reserved for future ad network, sponsor creative, or rewarded hint placement.</p>
+      <p className="font-black text-white">{ad?.headline ?? "Ad placement"}</p>
+      <p className="mt-1 text-sm leading-6 text-slate-500">{ad?.body ?? "Reserved for future ad network, sponsor creative, or rewarded hint placement."}</p>
+      {ad?.href && ad.href !== "#" && (
+        <a href={ad.href} target="_blank" rel="noreferrer" className="mt-3 inline-flex rounded-[8px] bg-white/10 px-3 py-2 text-sm font-bold text-primary">
+          {ad.cta || "Open"}
+        </a>
+      )}
     </div>
   );
 }
@@ -405,7 +465,8 @@ function FinalScore({
   name,
   setName,
   onSubmit,
-  onLeaderboard
+  onLeaderboard,
+  postGameAd
 }: {
   score: number;
   accuracy: number;
@@ -415,6 +476,7 @@ function FinalScore({
   setName: (value: string) => void;
   onSubmit: () => void;
   onLeaderboard: () => void;
+  postGameAd?: AdPlacement;
 }) {
   return (
     <div className="glass mx-auto max-w-5xl rounded-[8px] p-5 sm:p-8">
@@ -450,7 +512,7 @@ function FinalScore({
             </button>
           )}
           <div className="mt-5">
-            <AdSlot label="Post-game ad slot" />
+            <AdSlot label="Post-game ad slot" ad={postGameAd} />
           </div>
         </div>
         <div className="space-y-2">
@@ -470,7 +532,15 @@ function FinalScore({
   );
 }
 
-function Leaderboard({ leaderboard, dailyComplete }: { leaderboard: LeaderboardEntry[]; dailyComplete: boolean }) {
+function Leaderboard({
+  leaderboard,
+  dailyComplete,
+  leaderboardAd
+}: {
+  leaderboard: LeaderboardEntry[];
+  dailyComplete: boolean;
+  leaderboardAd?: AdPlacement;
+}) {
   return (
     <section className="mx-auto grid w-full max-w-7xl gap-5 px-5 pb-12 lg:grid-cols-[1fr_340px]">
       <div className="glass rounded-[8px] p-5">
@@ -493,7 +563,7 @@ function Leaderboard({ leaderboard, dailyComplete }: { leaderboard: LeaderboardE
         </div>
       </div>
       <div className="space-y-4">
-        <AdSlot label="Leaderboard top banner ad" />
+        <AdSlot label="Leaderboard top banner ad" ad={leaderboardAd} />
         <BoardCard title="Weekly" value="31,420" detail="Total points this week" />
         <BoardCard title="Monthly" value="128,900" detail="Total points this month" />
         <BoardCard title="Featured Daily" value="Sponsor slot" detail="Paid challenge placement placeholder" />

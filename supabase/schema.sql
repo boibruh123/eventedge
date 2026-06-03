@@ -9,7 +9,7 @@ create table if not exists public.users (
 );
 
 create table if not exists public.items (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   image text not null,
   title text not null,
   category text not null,
@@ -17,6 +17,18 @@ create table if not exists public.items (
   source text not null,
   difficulty text not null check (difficulty in ('Easy', 'Medium', 'Hard', 'Insane')),
   sponsored boolean default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists public.ads (
+  id text primary key,
+  placement text not null,
+  headline text not null,
+  body text not null,
+  cta text not null,
+  href text not null,
+  active boolean default true,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -64,12 +76,14 @@ create table if not exists public.multiplayer_rooms (
 
 alter table public.users enable row level security;
 alter table public.items enable row level security;
+alter table public.ads enable row level security;
 alter table public.daily_challenges enable row level security;
 alter table public.game_sessions enable row level security;
 alter table public.leaderboards enable row level security;
 alter table public.multiplayer_rooms enable row level security;
 
 create policy "Items are public to read" on public.items for select using (true);
+create policy "Ads are public to read" on public.ads for select using (true);
 create policy "Daily challenges are public to read" on public.daily_challenges for select using (true);
 create policy "Leaderboards are public to read" on public.leaderboards for select using (true);
 create policy "Players can create sessions" on public.game_sessions for insert with check (true);

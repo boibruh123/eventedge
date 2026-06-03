@@ -10,6 +10,16 @@ export type GameItem = {
   difficulty: Difficulty;
 };
 
+export type AdPlacement = {
+  id: string;
+  placement: string;
+  headline: string;
+  body: string;
+  cta: string;
+  href: string;
+  active: boolean;
+};
+
 export type LeaderboardEntry = {
   id: string;
   player_name: string;

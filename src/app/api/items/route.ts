@@ -20,17 +20,18 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const supabase = getServiceSupabase();
+  const body = await request.json();
+  const items = Array.isArray(body.items) ? body.items : [body];
 
   if (!supabase) {
-    return NextResponse.json({ error: "Supabase service role key is not configured." }, { status: 503 });
+    return NextResponse.json({ items, source: "localOnly" }, { status: 202 });
   }
 
-  const body = await request.json();
-  const { data, error } = await supabase.from("items").insert(body).select("*").single();
+  const { data, error } = await supabase.from("items").upsert(items, { onConflict: "id" }).select("*");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  return NextResponse.json({ item: data }, { status: 201 });
+  return NextResponse.json({ items: data, source: "supabase" }, { status: 201 });
 }

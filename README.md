@@ -1,62 +1,129 @@
-# EventEdge
+# GuessThePrice
 
-EventEdge is a full-stack SaaS MVP for Gainesville, Florida businesses that turns local events into inventory, staffing, and promotion recommendations.
+GuessThePrice is a production-ready MVP web game built with Next.js 15, TypeScript, Tailwind CSS, Supabase, and Vercel.
 
-## Run Locally
+Players see a real-world item, guess its current market price, reveal the actual price, earn points by accuracy, and complete a 10-round daily challenge shared by all players.
+
+## Tech Stack
+
+- Next.js 15 App Router
+- React 19
+- TypeScript
+- Tailwind CSS
+- Supabase Auth, Postgres, Row Level Security, and Realtime-ready tables
+- Vercel deployment
+
+## Product Features
+
+- Daily Challenge with the same 10 items for all players
+- Guest mode
+- Google login hook through Supabase Auth
+- Email login-ready Supabase configuration
+- Global, weekly, and monthly leaderboard surfaces
+- Private room screen with live-score data model
+- Admin dashboard for item operations and AI content workflow
+- Rewarded video, sponsored item, and featured challenge placeholders
+- Verified-price item model with source URLs
+- Fallback item database so the app runs before Supabase is configured
+
+## Scoring
+
+- Perfect guess: 1000 points
+- Within 5%: 750 points
+- Within 10%: 500 points
+- Within 20%: 250 points
+- Otherwise: 100 points
+
+## Folder Structure
+
+```text
+src/
+  app/
+    api/
+      daily/route.ts
+      items/route.ts
+      leaderboard/route.ts
+      rooms/route.ts
+    globals.css
+    layout.tsx
+    page.tsx
+  components/
+    guess-the-price-app.tsx
+  lib/
+    items.ts
+    scoring.ts
+    supabase.ts
+    types.ts
+supabase/
+  schema.sql
+.env.example
+next.config.ts
+tailwind.config.ts
+vercel.json
+```
+
+## Environment Variables
+
+Create `.env.local` from `.env.example`:
 
 ```bash
-node server.mjs
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+```
+
+The app works without these values by using local fallback data. Add the Supabase values to enable persistent items, leaderboards, auth, and room state.
+
+## Supabase Setup
+
+1. Create a Supabase project.
+2. Open the SQL editor.
+3. Run `supabase/schema.sql`.
+4. Enable Google auth in Supabase if you want Google login.
+5. Add your site URL and Vercel preview URLs to Supabase Auth redirect URLs.
+6. Optional: enable Realtime on `multiplayer_rooms` and `game_sessions`.
+
+## Local Development
+
+```bash
+npm install
+npm run dev
 ```
 
 Open `http://localhost:3000`.
 
-The app uses only built-in Node APIs, so it does not require installing packages for this MVP.
+## Vercel Deployment
 
-## Deploy To Vercel
+1. Push the repository to GitHub.
+2. Import the project in Vercel.
+3. Set the environment variables from `.env.example`.
+4. Deploy.
 
-Push these files to GitHub and import the repository in Vercel. The included `vercel.json` tells Vercel to:
+`vercel.json` is intentionally minimal and declares the framework as Next.js. Vercel will run `npm run build` automatically.
 
-- Serve the frontend from `public/`
-- Serve API routes from `api/index.mjs`
-- Route dashboard URLs back to `index.html`
+## Price Data Guidance
 
-Important: keep browser files such as `eventedge-client.js`, `styles.css`, and `index.html` inside the `public/` folder. If browser JavaScript is placed at the project root, Vercel may try to run it as server code and show `ReferenceError: document is not defined`.
+The MVP is designed around categories where pricing can be verified: houses, cars, sneakers, watches, trading cards, electronics, luxury handbags, sports memorabilia, furniture, boats, and collectibles.
 
-## Included
+For production item generation, prefer legitimate APIs and public datasets with price provenance. Examples include official manufacturer pages, public housing data, government datasets, auction APIs, price index providers, and marketplaces with permitted API or linking terms. Do not scrape websites that prohibit scraping, require login, block automated access, or hide price data behind paywalls.
 
-- Business account/profile setup
-- Gainesville event dashboard
-- Today, week, month, and year-ahead event views
-- Event details with source links, confidence, distance, attendance, and impact score
-- AI-style recommendation cards for stocking, staffing, promotions, social posts, and preparation timing
-- High-impact alerts
-- Event map view
-- Admin panel for users, businesses, sources, manual event creation, and collection jobs
-- Responsible public-source event import placeholder
-- Duplicate event detection
-- CSV and PDF report downloads
-- Subscription pricing and Stripe checkout handoff route
+Each item should store:
 
-## Data
-
-Local data is stored in:
-
-```text
-data/eventedge-db.json
+```json
+{
+  "id": "uuid",
+  "image": "https://...",
+  "title": "Item name",
+  "category": "Watches",
+  "price": 29250,
+  "source": "https://price-reference.example",
+  "difficulty": "Hard"
+}
 ```
 
-The seed data starts with Gainesville-focused venues and categories including University of Florida, Ben Hill Griffin Stadium, Exactech Arena, Downtown Gainesville, Celebration Pointe, Depot Park, Bo Diddley Plaza, concerts, farmers markets, graduation, sports, and family events.
+## Production Notes
 
-## Production Integration Points
-
-- Replace the local auth demo with Clerk, NextAuth, or another auth provider.
-- Replace JSON storage with PostgreSQL and Prisma using the models in the original product brief.
-- Connect `/api/checkout` to Stripe Checkout with plan-specific price IDs.
-- Connect recommendations to the OpenAI API if you want generated copy beyond the deterministic MVP engine.
-- Replace `refreshEvents` in `server.mjs` with legal public APIs, RSS feeds, iCal feeds, venue calendars, university calendars, ticket APIs, and city calendars.
-- Add Google Maps or Mapbox for production maps.
-- Add an email/SMS provider for alert delivery.
-
-## Responsible Collection Rules
-
-The MVP intentionally does not bypass logins, paywalls, CAPTCHAs, or private websites. Every event stores its source name and original source URL, and uncertain imported events should keep a lower confidence score.
+- Use `SUPABASE_SERVICE_ROLE_KEY` only on the server.
+- Keep admin item mutations behind role checks before opening the dashboard publicly.
+- The current ad and sponsorship areas are placeholders; no real ad SDK is integrated.
+- Fallback images use public image URLs. For high traffic, copy licensed assets to your own storage or use an image API with explicit terms.

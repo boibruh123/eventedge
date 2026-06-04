@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import type { ReactElement, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -610,6 +611,15 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
           onStart={startRoomGame}
         />
       )}
+      <footer className="mx-auto flex w-full max-w-7xl flex-col gap-3 border-t border-white/10 px-5 py-6 text-sm text-slate-500 md:flex-row md:items-center md:justify-between">
+        <p>GuessThePrice is an independent game. Prices are estimates and not buying, selling, appraisal, or investment advice.</p>
+        <nav className="flex flex-wrap gap-3 font-bold">
+          <Link href="/terms" className="hover:text-primary">Terms</Link>
+          <Link href="/privacy" className="hover:text-primary">Privacy</Link>
+          <Link href="/disclaimer" className="hover:text-primary">Disclaimer</Link>
+          <Link href="/copyright" className="hover:text-primary">Copyright</Link>
+        </nav>
+      </footer>
     </main>
   );
 }

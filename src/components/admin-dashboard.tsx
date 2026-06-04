@@ -134,6 +134,12 @@ export function AdminDashboard({ items }: { items: GameItem[] }) {
             </a>
             <h1 className="text-4xl font-black">GuessThePrice Admin</h1>
             <p className="mt-2 text-slate-400">Edit items and ads. Saves update the player link automatically for this site.</p>
+            <div className="mt-3 flex flex-wrap gap-3 text-sm font-bold text-slate-500">
+              <a href="/terms" className="hover:text-primary">Terms</a>
+              <a href="/privacy" className="hover:text-primary">Privacy</a>
+              <a href="/disclaimer" className="hover:text-primary">Disclaimer</a>
+              <a href="/copyright" className="hover:text-primary">Copyright</a>
+            </div>
           </div>
           <a href="/" className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-primary px-4 font-black text-night">
             <ExternalLink className="h-4 w-4" />

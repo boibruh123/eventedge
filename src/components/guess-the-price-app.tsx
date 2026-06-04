@@ -27,6 +27,18 @@ import { formatCurrency, formatPercent, scoreGuess } from "@/lib/scoring";
 import type { AdPlacement, GameItem, LeaderboardEntry, RoundResult } from "@/lib/types";
 
 type View = "home" | "play" | "leaderboard" | "rooms";
+type GameMode = "daily" | "multiplayer";
+type RoomPlayer = {
+  id: string;
+  name: string;
+  score: number;
+};
+
+type RoomState = {
+  code: string;
+  status: "waiting" | "playing" | "complete";
+  players: RoomPlayer[];
+};
 
 type Props = {
   items: GameItem[];
@@ -39,6 +51,14 @@ function todayKey() {
 
 function lockKey(date = todayKey()) {
   return `guesstheprice:daily:${date}`;
+}
+
+function roomKey(code: string) {
+  return `guesstheprice:room:${code.trim().toUpperCase()}`;
+}
+
+function makeRoomCode() {
+  return `PRICE-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
 export function GuessThePriceApp({ items, leaderboard }: Props) {
@@ -57,13 +77,19 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   const [dailyComplete, setDailyComplete] = useState(false);
   const [localLeaders, setLocalLeaders] = useState<LeaderboardEntry[]>([]);
   const [roomCode, setRoomCode] = useState("PRICE-4821");
-  const current = dailyItems[round];
+  const [roomName, setRoomName] = useState("");
+  const [room, setRoom] = useState<RoomState | null>(null);
+  const [roomMessage, setRoomMessage] = useState("");
+  const [roomPlayerId, setRoomPlayerId] = useState("");
+  const [gameMode, setGameMode] = useState<GameMode>("daily");
+  const gameItems = dailyItems;
+  const current = gameItems[round];
   const latest = results[results.length - 1];
   const finalScore = results.reduce((sum, result) => sum + result.points, 0);
   const averageAccuracy = results.length
     ? results.reduce((sum, result) => sum + result.accuracy, 0) / results.length
     : 0;
-  const finished = round >= dailyItems.length;
+  const finished = round >= gameItems.length;
   const board = [...localLeaders, ...leaderboard].sort((a, b) => b.score - a.score);
 
   const adByPlacement = (placement: string) =>
@@ -123,7 +149,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!finished || dailyComplete || results.length !== dailyItems.length) return;
+    if (gameMode !== "daily" || !finished || dailyComplete || results.length !== gameItems.length) return;
 
     const pendingEntry: LeaderboardEntry = {
       id: `local-${date}`,
@@ -136,7 +162,21 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
 
     window.localStorage.setItem(lockKey(date), JSON.stringify(pendingEntry));
     setDailyComplete(true);
-  }, [averageAccuracy, dailyComplete, dailyItems.length, date, finalScore, finished, results.length]);
+  }, [averageAccuracy, dailyComplete, date, finalScore, finished, gameItems.length, gameMode, results.length]);
+
+  useEffect(() => {
+    if (!room) return;
+    const activeRoomKey = roomKey(room.code);
+
+    function syncRoom(event?: StorageEvent) {
+      if (event && event.key !== activeRoomKey) return;
+      const saved = window.localStorage.getItem(activeRoomKey);
+      if (saved) setRoom(JSON.parse(saved) as RoomState);
+    }
+
+    window.addEventListener("storage", syncRoom);
+    return () => window.removeEventListener("storage", syncRoom);
+  }, [room]);
 
   function startGame() {
     if (dailyComplete) {
@@ -149,6 +189,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     setRevealed(false);
     setResults([]);
     setSubmitted(false);
+    setGameMode("daily");
     setView("play");
   }
 
@@ -158,6 +199,20 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     const { accuracy, points } = scoreGuess(current.price, numericGuess);
     setResults((previous) => [...previous, { item: current, guess: numericGuess, accuracy, points }]);
     setRevealed(true);
+
+    if (gameMode === "multiplayer" && room) {
+      const nextRoom = {
+        ...room,
+        status: "playing" as const,
+        players: room.players.map((roomPlayer, index) =>
+          roomPlayer.id === roomPlayerId || (!roomPlayerId && index === 0)
+            ? { ...roomPlayer, score: roomPlayer.score + points }
+            : roomPlayer
+        )
+      };
+      setRoom(nextRoom);
+      window.localStorage.setItem(roomKey(room.code), JSON.stringify(nextRoom));
+    }
   }
 
   function nextRound() {
@@ -173,15 +228,99 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       player_name: cleanName,
       score: finalScore,
       accuracy: Number(averageAccuracy.toFixed(1)),
-      mode: "daily",
+      mode: gameMode,
       created_at: date
     };
 
-    window.localStorage.setItem(lockKey(date), JSON.stringify(entry));
+    if (gameMode === "daily") window.localStorage.setItem(lockKey(date), JSON.stringify(entry));
     setLocalLeaders([entry]);
     setPlayer(cleanName);
-    setDailyComplete(true);
+    if (gameMode === "daily") setDailyComplete(true);
     setSubmitted(true);
+  }
+
+  function createRoom() {
+    const cleanName = roomName.trim().slice(0, 24) || player || "Host";
+    const code = makeRoomCode();
+    const playerId = `host-${Date.now()}`;
+    const nextRoom: RoomState = {
+      code,
+      status: "waiting",
+      players: [{ id: playerId, name: cleanName, score: 0 }]
+    };
+
+    setRoomCode(code);
+    setPlayer(cleanName);
+    setRoomName(cleanName);
+    setRoomPlayerId(playerId);
+    setRoom(nextRoom);
+    setRoomMessage(`Room ${code} created. Share this code with up to 5 friends.`);
+    window.localStorage.setItem(roomKey(code), JSON.stringify(nextRoom));
+  }
+
+  function joinRoom() {
+    const code = roomCode.trim().toUpperCase();
+    const cleanName = roomName.trim().slice(0, 24) || player || "Player";
+    const saved = window.localStorage.getItem(roomKey(code));
+
+    if (!saved) {
+      setRoomMessage("No room found with that code in this browser. Create it first or check the code.");
+      return;
+    }
+
+    const savedRoom = JSON.parse(saved) as RoomState;
+    if (savedRoom.players.length >= 6 && !savedRoom.players.some((roomPlayer) => roomPlayer.name === cleanName)) {
+      setRoomMessage("This room is full. Rooms can have a maximum of 6 players.");
+      return;
+    }
+
+    const existingPlayer = savedRoom.players.find((roomPlayer) => roomPlayer.name === cleanName);
+    const playerId = existingPlayer?.id ?? `player-${Date.now()}`;
+    const nextRoom = existingPlayer
+      ? savedRoom
+      : { ...savedRoom, players: [...savedRoom.players, { id: playerId, name: cleanName, score: 0 }] };
+
+    setPlayer(cleanName);
+    setRoomName(cleanName);
+    setRoomPlayerId(playerId);
+    setRoom(nextRoom);
+    setRoomMessage(`Joined ${code}. ${nextRoom.players.length}/6 players are in.`);
+    window.localStorage.setItem(roomKey(code), JSON.stringify(nextRoom));
+  }
+
+  function leaveRoom() {
+    if (!room) return;
+    const nextRoom = {
+      ...room,
+      players: room.players.filter((roomPlayer) => roomPlayer.id !== roomPlayerId)
+    };
+    window.localStorage.setItem(roomKey(room.code), JSON.stringify(nextRoom));
+    setRoom(null);
+    setRoomPlayerId("");
+    setRoomMessage("Left the room.");
+  }
+
+  function startRoomGame() {
+    if (!room) {
+      setRoomMessage("Create or join a room before starting.");
+      return;
+    }
+
+    if (room.players.length < 1) {
+      setRoomMessage("A room needs at least one player to start.");
+      return;
+    }
+
+    const nextRoom = { ...room, status: "playing" as const };
+    setRoom(nextRoom);
+    window.localStorage.setItem(roomKey(room.code), JSON.stringify(nextRoom));
+    setRound(0);
+    setGuess("");
+    setRevealed(false);
+    setResults([]);
+    setSubmitted(false);
+    setGameMode("multiplayer");
+    setView("play");
   }
 
   return (
@@ -302,7 +441,9 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
               <div className="glass overflow-hidden rounded-[8px]">
                 <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                   <div>
-                    <p className="text-sm font-bold text-primary">Round {round + 1} of 10</p>
+                    <p className="text-sm font-bold text-primary">
+                      {gameMode === "multiplayer" ? `Room ${room?.code ?? ""}` : `Round ${round + 1} of 10`}
+                    </p>
                     <h2 className="text-2xl font-black">{current.title}</h2>
                   </div>
                   <span className="rounded-[8px] bg-secondary/25 px-3 py-2 text-sm font-bold text-purple-100">
@@ -397,7 +538,20 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
           leaderboardAd={adByPlacement("Leaderboard top banner ad")}
         />
       )}
-      {view === "rooms" && <Rooms roomCode={roomCode} setRoomCode={setRoomCode} />}
+      {view === "rooms" && (
+        <Rooms
+          roomCode={roomCode}
+          setRoomCode={setRoomCode}
+          roomName={roomName}
+          setRoomName={setRoomName}
+          room={room}
+          message={roomMessage}
+          onCreate={createRoom}
+          onJoin={joinRoom}
+          onLeave={leaveRoom}
+          onStart={startRoomGame}
+        />
+      )}
     </main>
   );
 }
@@ -582,7 +736,32 @@ function BoardCard({ title, value, detail }: { title: string; value: string; det
   );
 }
 
-function Rooms({ roomCode, setRoomCode }: { roomCode: string; setRoomCode: (value: string) => void }) {
+function Rooms({
+  roomCode,
+  setRoomCode,
+  roomName,
+  setRoomName,
+  room,
+  message,
+  onCreate,
+  onJoin,
+  onLeave,
+  onStart
+}: {
+  roomCode: string;
+  setRoomCode: (value: string) => void;
+  roomName: string;
+  setRoomName: (value: string) => void;
+  room: RoomState | null;
+  message: string;
+  onCreate: () => void;
+  onJoin: () => void;
+  onLeave: () => void;
+  onStart: () => void;
+}) {
+  const seats = Array.from({ length: 6 }, (_, index) => room?.players[index] ?? null);
+  const isFull = (room?.players.length ?? 0) >= 6;
+
   return (
     <section className="mx-auto grid w-full max-w-7xl gap-5 px-5 pb-12 lg:grid-cols-[420px_1fr]">
       <div className="glass rounded-[8px] p-5">
@@ -590,8 +769,21 @@ function Rooms({ roomCode, setRoomCode }: { roomCode: string; setRoomCode: (valu
           <Users className="h-7 w-7" />
         </div>
         <h2 className="text-3xl font-black">Private rooms</h2>
-        <p className="mt-3 leading-7 text-slate-300">Invite friends, play the same item set, and sync scores live through Supabase Realtime when keys are configured.</p>
-        <label className="mt-6 block text-sm font-bold text-slate-300" htmlFor="room">
+        <p className="mt-3 leading-7 text-slate-300">
+          Create a private room, share the code, and play the same item set with up to 6 players.
+        </p>
+        <label className="mt-6 block text-sm font-bold text-slate-300" htmlFor="room-name">
+          Player name
+        </label>
+        <input
+          id="room-name"
+          value={roomName}
+          onChange={(event) => setRoomName(event.target.value)}
+          className="mt-2 h-14 w-full rounded-[8px] border border-white/10 bg-white/10 px-4 font-bold outline-none focus:border-primary"
+          placeholder="Your name"
+          maxLength={24}
+        />
+        <label className="mt-4 block text-sm font-bold text-slate-300" htmlFor="room">
           Room code
         </label>
         <input
@@ -600,18 +792,38 @@ function Rooms({ roomCode, setRoomCode }: { roomCode: string; setRoomCode: (valu
           onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
           className="mt-2 h-14 w-full rounded-[8px] border border-white/10 bg-white/10 px-4 font-mono text-xl font-black outline-none focus:border-primary"
         />
-        <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-[8px] bg-primary px-5 py-4 font-black text-night">
-          <Plus className="h-4 w-4" />
-          Create Room
-        </button>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <button onClick={onCreate} className="flex items-center justify-center gap-2 rounded-[8px] bg-primary px-5 py-4 font-black text-night">
+            <Plus className="h-4 w-4" />
+            Create
+          </button>
+          <button
+            onClick={onJoin}
+            disabled={isFull}
+            className="flex items-center justify-center gap-2 rounded-[8px] border border-white/10 px-5 py-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Join
+          </button>
+        </div>
+        {message && <p className="mt-4 rounded-[8px] border border-white/10 bg-white/5 p-3 text-sm font-bold text-slate-300">{message}</p>}
+        {room && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <button onClick={onStart} className="rounded-[8px] bg-accent px-5 py-4 font-black text-white">
+              Start Room Game
+            </button>
+            <button onClick={onLeave} className="rounded-[8px] border border-white/10 px-5 py-4 font-bold text-slate-300">
+              Leave
+            </button>
+          </div>
+        )}
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        {["You", "Invite 1", "Invite 2"].map((name, index) => (
-          <div key={name} className="glass rounded-[8px] p-5">
+        {seats.map((roomPlayer, index) => (
+          <div key={roomPlayer?.id ?? `seat-${index}`} className="glass rounded-[8px] p-5">
             <p className="text-sm text-slate-400">Player {index + 1}</p>
-            <p className="mt-2 text-2xl font-black">{name}</p>
-            <p className="mt-5 font-mono text-4xl font-black text-primary">{index === 0 ? "0" : "--"}</p>
-            <p className="mt-2 text-sm text-slate-400">Live score</p>
+            <p className="mt-2 min-h-8 text-2xl font-black">{roomPlayer?.name ?? "Open seat"}</p>
+            <p className="mt-5 font-mono text-4xl font-black text-primary">{roomPlayer ? roomPlayer.score : "--"}</p>
+            <p className="mt-2 text-sm text-slate-400">{roomPlayer ? "Live score" : "Invite slot"}</p>
           </div>
         ))}
       </div>

@@ -8,6 +8,7 @@ export async function POST() {
     room: {
       code,
       status: "waiting",
+      maxPlayers: 6,
       items: getDailyItems(),
       realtime: "Enable Supabase Realtime on multiplayer_rooms and game_sessions for live score sync."
     }

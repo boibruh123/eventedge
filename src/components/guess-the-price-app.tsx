@@ -845,6 +845,10 @@ function Rooms({
         <p className="mt-3 leading-7 text-slate-300">
           Create a private room, share the code, and play the same item set with up to 6 players.
         </p>
+        <div className="mt-4 rounded-[8px] border border-primary/20 bg-primary/10 p-3 text-sm leading-6 text-slate-200">
+          <p className="font-black text-primary">How it works</p>
+          <p>Host creates a room, friends join with the code, host starts, everyone plays together.</p>
+        </div>
         <label className="mt-6 block text-sm font-bold text-slate-300" htmlFor="room-name">
           Player name
         </label>

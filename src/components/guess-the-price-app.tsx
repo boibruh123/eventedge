@@ -61,6 +61,11 @@ function makeRoomCode() {
   return `PRICE-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
+function roomChannel() {
+  if (typeof window === "undefined" || !("BroadcastChannel" in window)) return null;
+  return new BroadcastChannel("guesstheprice:rooms");
+}
+
 export function GuessThePriceApp({ items, leaderboard }: Props) {
   const date = todayKey();
   const [catalog, setCatalog] = useState(items);
@@ -167,16 +172,50 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   useEffect(() => {
     if (!room) return;
     const activeRoomKey = roomKey(room.code);
+    const channel = roomChannel();
+
+    function applyRoomUpdate(nextRoom: RoomState) {
+      setRoom(nextRoom);
+      if (nextRoom.status === "playing" && gameMode !== "multiplayer") {
+        setRound(0);
+        setGuess("");
+        setRevealed(false);
+        setResults([]);
+        setSubmitted(false);
+        setGameMode("multiplayer");
+        setView("play");
+        setRoomMessage(`Room ${nextRoom.code} started.`);
+      }
+    }
 
     function syncRoom(event?: StorageEvent) {
       if (event && event.key !== activeRoomKey) return;
       const saved = window.localStorage.getItem(activeRoomKey);
-      if (saved) setRoom(JSON.parse(saved) as RoomState);
+      if (saved) applyRoomUpdate(JSON.parse(saved) as RoomState);
     }
 
+    function syncBroadcast(event: MessageEvent<RoomState>) {
+      if (event.data && roomKey(event.data.code) === activeRoomKey) applyRoomUpdate(event.data);
+    }
+
+    const poll = window.setInterval(() => syncRoom(), 1500);
     window.addEventListener("storage", syncRoom);
-    return () => window.removeEventListener("storage", syncRoom);
-  }, [room]);
+    channel?.addEventListener("message", syncBroadcast);
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener("storage", syncRoom);
+      channel?.removeEventListener("message", syncBroadcast);
+      channel?.close();
+    };
+  }, [gameMode, room]);
+
+  function publishRoom(nextRoom: RoomState) {
+    setRoom(nextRoom);
+    window.localStorage.setItem(roomKey(nextRoom.code), JSON.stringify(nextRoom));
+    const channel = roomChannel();
+    channel?.postMessage(nextRoom);
+    channel?.close();
+  }
 
   function startGame() {
     if (dailyComplete) {
@@ -210,8 +249,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
             : roomPlayer
         )
       };
-      setRoom(nextRoom);
-      window.localStorage.setItem(roomKey(room.code), JSON.stringify(nextRoom));
+      publishRoom(nextRoom);
     }
   }
 
@@ -235,6 +273,16 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     if (gameMode === "daily") window.localStorage.setItem(lockKey(date), JSON.stringify(entry));
     setLocalLeaders([entry]);
     setPlayer(cleanName);
+    if (gameMode === "multiplayer" && room) {
+      publishRoom({
+        ...room,
+        players: room.players.map((roomPlayer, index) =>
+          roomPlayer.id === roomPlayerId || (!roomPlayerId && index === 0)
+            ? { ...roomPlayer, name: cleanName, score: finalScore }
+            : roomPlayer
+        )
+      });
+    }
     if (gameMode === "daily") setDailyComplete(true);
     setSubmitted(true);
   }
@@ -253,9 +301,8 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     setPlayer(cleanName);
     setRoomName(cleanName);
     setRoomPlayerId(playerId);
-    setRoom(nextRoom);
     setRoomMessage(`Room ${code} created. Share this code with up to 5 friends.`);
-    window.localStorage.setItem(roomKey(code), JSON.stringify(nextRoom));
+    publishRoom(nextRoom);
   }
 
   function joinRoom() {
@@ -283,9 +330,8 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     setPlayer(cleanName);
     setRoomName(cleanName);
     setRoomPlayerId(playerId);
-    setRoom(nextRoom);
     setRoomMessage(`Joined ${code}. ${nextRoom.players.length}/6 players are in.`);
-    window.localStorage.setItem(roomKey(code), JSON.stringify(nextRoom));
+    publishRoom(nextRoom);
   }
 
   function leaveRoom() {
@@ -294,7 +340,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       ...room,
       players: room.players.filter((roomPlayer) => roomPlayer.id !== roomPlayerId)
     };
-    window.localStorage.setItem(roomKey(room.code), JSON.stringify(nextRoom));
+    publishRoom(nextRoom);
     setRoom(null);
     setRoomPlayerId("");
     setRoomMessage("Left the room.");
@@ -312,8 +358,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     }
 
     const nextRoom = { ...room, status: "playing" as const };
-    setRoom(nextRoom);
-    window.localStorage.setItem(roomKey(room.code), JSON.stringify(nextRoom));
+    publishRoom(nextRoom);
     setRound(0);
     setGuess("");
     setRevealed(false);
@@ -524,6 +569,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
                   )}
                 </div>
                 <AdSlot label="Rewarded video ad slot" icon={<Video className="h-4 w-4 text-accent" />} ad={adByPlacement("Rewarded video ad slot")} />
+                {gameMode === "multiplayer" && room && <RoomScoreboard room={room} />}
                 <AdSlot label="Sidebar display ad" ad={adByPlacement("Sidebar display ad")} />
               </aside>
             </div>
@@ -732,6 +778,33 @@ function BoardCard({ title, value, detail }: { title: string; value: string; det
       <p className="text-sm text-slate-400">{title}</p>
       <p className="mt-1 text-2xl font-black">{value}</p>
       <p className="mt-2 text-sm leading-6 text-slate-400">{detail}</p>
+    </div>
+  );
+}
+
+function RoomScoreboard({ room }: { room: RoomState }) {
+  const sortedPlayers = [...room.players].sort((a, b) => b.score - a.score);
+
+  return (
+    <div className="glass rounded-[8px] p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-bold text-primary">Live room scores</p>
+          <h3 className="text-2xl font-black">{room.code}</h3>
+        </div>
+        <span className="rounded-[8px] bg-white/10 px-3 py-2 text-sm font-bold text-slate-300">
+          {room.players.length}/6
+        </span>
+      </div>
+      <div className="space-y-2">
+        {sortedPlayers.map((roomPlayer, index) => (
+          <div key={roomPlayer.id} className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-[8px] bg-white/5 p-3">
+            <span className="font-mono text-sm text-slate-500">#{index + 1}</span>
+            <span className="font-bold">{roomPlayer.name}</span>
+            <span className="font-mono font-black text-primary">{roomPlayer.score}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

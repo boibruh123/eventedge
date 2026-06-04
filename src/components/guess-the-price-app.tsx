@@ -53,6 +53,10 @@ function lockKey(date = todayKey()) {
   return `guesstheprice:daily:${date}`;
 }
 
+function leaderboardKey(date = todayKey()) {
+  return `guesstheprice:leaderboard:${date}`;
+}
+
 function roomKey(code: string) {
   return `guesstheprice:room:${code.trim().toUpperCase()}`;
 }
@@ -102,12 +106,14 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     defaultAds.find((ad) => ad.placement === placement && ad.active);
 
   useEffect(() => {
+    const savedLeaders = window.localStorage.getItem(leaderboardKey(date));
+    if (savedLeaders) setLocalLeaders(JSON.parse(savedLeaders) as LeaderboardEntry[]);
+
     const saved = window.localStorage.getItem(lockKey(date));
     if (saved) {
       setDailyComplete(true);
       const parsed = JSON.parse(saved) as LeaderboardEntry;
       if (parsed.player_name !== "Pending") {
-        setLocalLeaders([parsed]);
         setSubmitted(true);
         setPlayer(parsed.player_name);
       }
@@ -262,26 +268,31 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   function saveLeaderboardName() {
     const cleanName = name.trim().slice(0, 24) || "Anonymous";
     const entry: LeaderboardEntry = {
-      id: `local-${date}`,
+      id: `${gameMode}-${date}-${Date.now()}`,
       player_name: cleanName,
       score: finalScore,
       accuracy: Number(averageAccuracy.toFixed(1)),
       mode: gameMode,
       created_at: date
     };
+    const savedLeaders = window.localStorage.getItem(leaderboardKey(date));
+    const previousLeaders = savedLeaders ? (JSON.parse(savedLeaders) as LeaderboardEntry[]) : [];
+    const nextLeaders = [entry, ...previousLeaders].sort((a, b) => b.score - a.score);
 
     if (gameMode === "daily") window.localStorage.setItem(lockKey(date), JSON.stringify(entry));
-    setLocalLeaders([entry]);
+    window.localStorage.setItem(leaderboardKey(date), JSON.stringify(nextLeaders));
+    setLocalLeaders(nextLeaders);
     setPlayer(cleanName);
     if (gameMode === "multiplayer" && room) {
-      publishRoom({
+      const updatedRoom = {
         ...room,
         players: room.players.map((roomPlayer, index) =>
           roomPlayer.id === roomPlayerId || (!roomPlayerId && index === 0)
             ? { ...roomPlayer, name: cleanName, score: finalScore }
             : roomPlayer
         )
-      });
+      };
+      publishRoom(updatedRoom);
     }
     if (gameMode === "daily") setDailyComplete(true);
     setSubmitted(true);
@@ -480,6 +491,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
               onSubmit={saveLeaderboardName}
               onLeaderboard={() => setView("leaderboard")}
               postGameAd={adByPlacement("Post-game ad slot")}
+              room={gameMode === "multiplayer" ? room : null}
             />
           ) : (
             <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
@@ -666,7 +678,8 @@ function FinalScore({
   setName,
   onSubmit,
   onLeaderboard,
-  postGameAd
+  postGameAd,
+  room
 }: {
   score: number;
   accuracy: number;
@@ -677,6 +690,7 @@ function FinalScore({
   onSubmit: () => void;
   onLeaderboard: () => void;
   postGameAd?: AdPlacement;
+  room: RoomState | null;
 }) {
   return (
     <div className="glass mx-auto max-w-5xl rounded-[8px] p-5 sm:p-8">
@@ -715,17 +729,20 @@ function FinalScore({
             <AdSlot label="Post-game ad slot" ad={postGameAd} />
           </div>
         </div>
-        <div className="space-y-2">
-          {results.map((result, index) => (
-            <div key={result.item.id} className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-[8px] bg-white/5 p-3">
-              <span className="font-mono text-sm text-slate-500">{index + 1}</span>
-              <div>
-                <p className="font-bold">{result.item.title}</p>
-                <p className="text-sm text-slate-400">{formatCurrency(result.item.price)} actual</p>
+        <div className="space-y-4">
+          {room && <RoomScoreboard room={room} title="Final room scores" />}
+          <div className="space-y-2">
+            {results.map((result, index) => (
+              <div key={result.item.id} className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-[8px] bg-white/5 p-3">
+                <span className="font-mono text-sm text-slate-500">{index + 1}</span>
+                <div>
+                  <p className="font-bold">{result.item.title}</p>
+                  <p className="text-sm text-slate-400">{formatCurrency(result.item.price)} actual</p>
+                </div>
+                <span className="font-mono font-black text-primary">+{result.points}</span>
               </div>
-              <span className="font-mono font-black text-primary">+{result.points}</span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -782,14 +799,14 @@ function BoardCard({ title, value, detail }: { title: string; value: string; det
   );
 }
 
-function RoomScoreboard({ room }: { room: RoomState }) {
+function RoomScoreboard({ room, title = "Live room scores" }: { room: RoomState; title?: string }) {
   const sortedPlayers = [...room.players].sort((a, b) => b.score - a.score);
 
   return (
     <div className="glass rounded-[8px] p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <p className="text-sm font-bold text-primary">Live room scores</p>
+          <p className="text-sm font-bold text-primary">{title}</p>
           <h3 className="text-2xl font-black">{room.code}</h3>
         </div>
         <span className="rounded-[8px] bg-white/10 px-3 py-2 text-sm font-bold text-slate-300">

@@ -27,8 +27,8 @@ import { getDailyItems } from "@/lib/items";
 import { formatCurrency, formatPercent, scoreGuess } from "@/lib/scoring";
 import type { AdPlacement, GameItem, LeaderboardEntry, RoundResult } from "@/lib/types";
 
-type View = "home" | "play" | "leaderboard" | "rooms";
-type GameMode = "daily" | "multiplayer";
+type View = "home" | "play" | "games" | "leaderboard" | "rooms";
+type GameMode = "daily" | "multiplayer" | "category" | "archive";
 type RoomPlayer = {
   id: string;
   name: string;
@@ -92,7 +92,9 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   const [roomMessage, setRoomMessage] = useState("");
   const [roomPlayerId, setRoomPlayerId] = useState("");
   const [gameMode, setGameMode] = useState<GameMode>("daily");
-  const gameItems = dailyItems;
+  const [activeGameTitle, setActiveGameTitle] = useState("Daily Challenge");
+  const [activeItems, setActiveItems] = useState<GameItem[]>([]);
+  const gameItems = activeItems.length ? activeItems : dailyItems;
   const current = gameItems[round];
   const latest = results[results.length - 1];
   const finalScore = results.reduce((sum, result) => sum + result.points, 0);
@@ -236,6 +238,21 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     setResults([]);
     setSubmitted(false);
     setGameMode("daily");
+    setActiveGameTitle("Daily Challenge");
+    setActiveItems(dailyItems);
+    setView("play");
+  }
+
+  function startCustomGame(title: string, selectedItems: GameItem[], mode: GameMode) {
+    const playableItems = selectedItems.length >= 10 ? selectedItems.slice(0, 10) : selectedItems;
+    setRound(0);
+    setGuess("");
+    setRevealed(false);
+    setResults([]);
+    setSubmitted(false);
+    setGameMode(mode);
+    setActiveGameTitle(title);
+    setActiveItems(playableItems);
     setView("play");
   }
 
@@ -273,7 +290,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       player_name: cleanName,
       score: finalScore,
       accuracy: Number(averageAccuracy.toFixed(1)),
-      mode: gameMode,
+      mode: gameMode === "category" || gameMode === "archive" ? "classic" : gameMode,
       created_at: date
     };
     const savedLeaders = window.localStorage.getItem(leaderboardKey(date));
@@ -377,6 +394,8 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     setResults([]);
     setSubmitted(false);
     setGameMode("multiplayer");
+    setActiveGameTitle(`Room ${room.code}`);
+    setActiveItems(dailyItems);
     setView("play");
   }
 
@@ -395,6 +414,9 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
         <nav className="hidden items-center gap-2 md:flex">
           <NavButton active={view === "play"} onClick={startGame} icon={<Gamepad2 />}>
             Play
+          </NavButton>
+          <NavButton active={view === "games"} onClick={() => setView("games")} icon={<Sparkles />}>
+            Games
           </NavButton>
           <NavButton active={view === "leaderboard"} onClick={() => setView("leaderboard")} icon={<Trophy />}>
             Leaders
@@ -438,6 +460,13 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
               >
                 <Users className="h-5 w-5" />
                 Create Room
+              </button>
+              <button
+                onClick={() => setView("games")}
+                className="flex h-14 items-center gap-3 rounded-[8px] border border-white/10 bg-white/10 px-6 text-base font-bold text-white transition hover:border-primary/70 hover:bg-primary/10"
+              >
+                <Sparkles className="h-5 w-5" />
+                Browse Games
               </button>
             </div>
             {dailyComplete && (
@@ -500,7 +529,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
                 <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                   <div>
                     <p className="text-sm font-bold text-primary">
-                      {gameMode === "multiplayer" ? `Room ${room?.code ?? ""}` : `Round ${round + 1} of 10`}
+                      {gameMode === "multiplayer" ? `Room ${room?.code ?? ""}` : activeGameTitle}
                     </p>
                     <h2 className="text-2xl font-black">{current.title}</h2>
                   </div>
@@ -588,6 +617,15 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
             </div>
           )}
         </section>
+      )}
+
+      {view === "games" && (
+        <Games
+          catalog={catalog}
+          dailyItems={dailyItems}
+          onStartDaily={startGame}
+          onStartGame={startCustomGame}
+        />
       )}
 
       {view === "leaderboard" && (
@@ -806,6 +844,149 @@ function BoardCard({ title, value, detail }: { title: string; value: string; det
       <p className="mt-1 text-2xl font-black">{value}</p>
       <p className="mt-2 text-sm leading-6 text-slate-400">{detail}</p>
     </div>
+  );
+}
+
+function Games({
+  catalog,
+  dailyItems,
+  onStartDaily,
+  onStartGame
+}: {
+  catalog: GameItem[];
+  dailyItems: GameItem[];
+  onStartDaily: () => void;
+  onStartGame: (title: string, selectedItems: GameItem[], mode: GameMode) => void;
+}) {
+  const categoryGroups = Array.from(
+    catalog.reduce((groups, item) => {
+      const next = groups.get(item.category) ?? [];
+      next.push(item);
+      groups.set(item.category, next);
+      return groups;
+    }, new Map<string, GameItem[]>())
+  )
+    .map(([category, items]) => ({ category, items }))
+    .sort((a, b) => a.category.localeCompare(b.category));
+
+  const pastDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (index + 1));
+    return {
+      label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      title: `Daily Archive: ${date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}`,
+      items: getDailyItems(date, catalog)
+    };
+  });
+
+  return (
+    <section className="mx-auto w-full max-w-7xl px-5 pb-12">
+      <div className="mb-6">
+        <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Games</p>
+        <h2 className="mt-2 text-4xl font-black">Pick a price challenge</h2>
+        <p className="mt-3 max-w-2xl text-slate-300">
+          Play today&apos;s 10-item challenge, replay older daily sets, or choose a category.
+        </p>
+      </div>
+
+      <div className="mb-8 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <GameCard
+          title="Today's Daily 10"
+          detail="The main daily challenge. One locked run per day."
+          count={dailyItems.length}
+          image={dailyItems[0]?.image}
+          onClick={onStartDaily}
+          featured
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          {pastDays.slice(0, 4).map((day) => (
+            <GameCard
+              key={day.title}
+              title={day.label}
+              detail="Past daily set"
+              count={day.items.length}
+              image={day.items[0]?.image}
+              onClick={() => onStartGame(day.title, day.items, "archive")}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-2xl font-black">Past daily games</h3>
+          <span className="text-sm font-bold text-slate-500">Last 7 days</span>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {pastDays.map((day) => (
+            <GameCard
+              key={day.title}
+              title={day.label}
+              detail="Archive game"
+              count={day.items.length}
+              image={day.items[1]?.image ?? day.items[0]?.image}
+              onClick={() => onStartGame(day.title, day.items, "archive")}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-2xl font-black">Category games</h3>
+          <span className="text-sm font-bold text-slate-500">{categoryGroups.length} sections</span>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {categoryGroups.map(({ category, items }) => (
+            <GameCard
+              key={category}
+              title={category}
+              detail={items.length >= 10 ? "10-item category challenge" : `${items.length}-item quick game`}
+              count={Math.min(items.length, 10)}
+              image={items[0]?.image}
+              onClick={() => onStartGame(`${category} Game`, items, "category")}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GameCard({
+  title,
+  detail,
+  count,
+  image,
+  featured,
+  onClick
+}: {
+  title: string;
+  detail: string;
+  count: number;
+  image?: string;
+  featured?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`glass group overflow-hidden rounded-[8px] text-left transition hover:border-primary/60 ${
+        featured ? "grid gap-0 sm:grid-cols-[1fr_0.9fr]" : ""
+      }`}
+    >
+      <div className={`relative overflow-hidden bg-white/10 ${featured ? "min-h-64 sm:order-2" : "h-40"}`}>
+        {image && <Image src={image} alt={title} fill className="object-cover transition group-hover:scale-105" sizes="(min-width: 1024px) 25vw, 90vw" />}
+      </div>
+      <div className="p-4">
+        <p className="text-sm font-bold text-primary">{count} guesses</p>
+        <h4 className="mt-1 text-2xl font-black">{title}</h4>
+        <p className="mt-2 text-sm leading-6 text-slate-400">{detail}</p>
+        <span className="mt-4 inline-flex rounded-[8px] bg-primary px-3 py-2 text-sm font-black text-night">
+          Play
+        </span>
+      </div>
+    </button>
   );
 }
 

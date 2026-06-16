@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { defaultAds } from "@/lib/ads";
 import { CONTENT_KEYS } from "@/lib/content-store";
-import { getDailyItems } from "@/lib/items";
+import { getDailyItems, getDecks } from "@/lib/items";
 import { formatCurrency, formatPercent, scoreGuess } from "@/lib/scoring";
 import type { AdPlacement, GameItem, LeaderboardEntry, RoundResult } from "@/lib/types";
 
@@ -38,6 +38,9 @@ type RoomPlayer = {
 type RoomState = {
   code: string;
   status: "waiting" | "playing" | "complete";
+  title: string;
+  deckCategory: string;
+  items: GameItem[];
   players: RoomPlayer[];
 };
 
@@ -91,9 +94,19 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   const [room, setRoom] = useState<RoomState | null>(null);
   const [roomMessage, setRoomMessage] = useState("");
   const [roomPlayerId, setRoomPlayerId] = useState("");
+  const [roomDeckCategory, setRoomDeckCategory] = useState("Daily Challenge");
   const [gameMode, setGameMode] = useState<GameMode>("daily");
   const [activeGameTitle, setActiveGameTitle] = useState("Daily Challenge");
   const [activeItems, setActiveItems] = useState<GameItem[]>([]);
+  const deckOptions = useMemo(() => getDecks(catalog), [catalog]);
+  const selectedRoomDeck = useMemo(() => {
+    if (roomDeckCategory === "Daily Challenge") {
+      return { category: "Daily Challenge", title: "Daily Challenge", items: dailyItems };
+    }
+
+    const deck = deckOptions.find((option) => option.category === roomDeckCategory) ?? deckOptions[0];
+    return { category: deck?.category ?? "Daily Challenge", title: `${deck?.category ?? "Daily"} Room`, items: deck?.items ?? dailyItems };
+  }, [dailyItems, deckOptions, roomDeckCategory]);
   const gameItems = activeItems.length ? activeItems : dailyItems;
   const current = gameItems[round];
   const latest = results[results.length - 1];
@@ -192,6 +205,8 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
         setResults([]);
         setSubmitted(false);
         setGameMode("multiplayer");
+        setActiveGameTitle(nextRoom.title);
+        setActiveItems(nextRoom.items);
         setView("play");
         setRoomMessage(`Room ${nextRoom.code} started.`);
       }
@@ -323,6 +338,9 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     const nextRoom: RoomState = {
       code,
       status: "waiting",
+      title: selectedRoomDeck.title,
+      deckCategory: selectedRoomDeck.category,
+      items: selectedRoomDeck.items,
       players: [{ id: playerId, name: cleanName, score: 0 }]
     };
 
@@ -330,7 +348,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     setPlayer(cleanName);
     setRoomName(cleanName);
     setRoomPlayerId(playerId);
-    setRoomMessage(`Room ${code} created. Share this code with up to 5 friends.`);
+    setRoomMessage(`Room ${code} created for ${selectedRoomDeck.title}. Share this code with up to 5 friends.`);
     publishRoom(nextRoom);
   }
 
@@ -386,7 +404,11 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       return;
     }
 
-    const nextRoom = { ...room, status: "playing" as const };
+    const nextRoom = {
+      ...room,
+      status: "playing" as const,
+      players: room.players.map((roomPlayer) => ({ ...roomPlayer, score: 0 }))
+    };
     publishRoom(nextRoom);
     setRound(0);
     setGuess("");
@@ -394,8 +416,8 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     setResults([]);
     setSubmitted(false);
     setGameMode("multiplayer");
-    setActiveGameTitle(`Room ${room.code}`);
-    setActiveItems(dailyItems);
+    setActiveGameTitle(nextRoom.title);
+    setActiveItems(nextRoom.items);
     setView("play");
   }
 
@@ -605,7 +627,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
                         onClick={nextRound}
                         className="flex w-full items-center justify-center rounded-[8px] bg-accent px-5 py-4 font-black text-white transition hover:scale-[1.01]"
                       >
-                        {round === 9 ? "Finish Challenge" : "Next Item"}
+                        {round === gameItems.length - 1 ? "Finish Challenge" : "Next Item"}
                       </button>
                     </div>
                   )}
@@ -642,6 +664,9 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
           roomName={roomName}
           setRoomName={setRoomName}
           room={room}
+          decks={[{ category: "Daily Challenge", items: dailyItems }, ...deckOptions]}
+          roomDeckCategory={roomDeckCategory}
+          setRoomDeckCategory={setRoomDeckCategory}
           message={roomMessage}
           onCreate={createRoom}
           onJoin={joinRoom}
@@ -858,16 +883,7 @@ function Games({
   onStartDaily: () => void;
   onStartGame: (title: string, selectedItems: GameItem[], mode: GameMode) => void;
 }) {
-  const categoryGroups = Array.from(
-    catalog.reduce((groups, item) => {
-      const next = groups.get(item.category) ?? [];
-      next.push(item);
-      groups.set(item.category, next);
-      return groups;
-    }, new Map<string, GameItem[]>())
-  )
-    .map(([category, items]) => ({ category, items }))
-    .sort((a, b) => a.category.localeCompare(b.category));
+  const categoryGroups = getDecks(catalog);
 
   const pastDays = Array.from({ length: 7 }, (_, index) => {
     const date = new Date();
@@ -941,8 +957,8 @@ function Games({
             <GameCard
               key={category}
               title={category}
-              detail={items.length >= 10 ? "10-item category challenge" : `${items.length}-item quick game`}
-              count={Math.min(items.length, 10)}
+              detail="10-item category challenge"
+              count={10}
               image={items[0]?.image}
               onClick={() => onStartGame(`${category} Game`, items, "category")}
             />
@@ -1023,6 +1039,9 @@ function Rooms({
   roomName,
   setRoomName,
   room,
+  decks,
+  roomDeckCategory,
+  setRoomDeckCategory,
   message,
   onCreate,
   onJoin,
@@ -1034,6 +1053,9 @@ function Rooms({
   roomName: string;
   setRoomName: (value: string) => void;
   room: RoomState | null;
+  decks: { category: string; items: GameItem[] }[];
+  roomDeckCategory: string;
+  setRoomDeckCategory: (value: string) => void;
   message: string;
   onCreate: () => void;
   onJoin: () => void;
@@ -1051,7 +1073,7 @@ function Rooms({
         </div>
         <h2 className="text-3xl font-black">Private rooms</h2>
         <p className="mt-3 leading-7 text-slate-300">
-          Create a private room, share the code, and play the same item set with up to 6 players.
+          Create a private room, choose a deck, share the code, and play the same 10 items with up to 6 players.
         </p>
         <div className="mt-4 rounded-[8px] border border-primary/20 bg-primary/10 p-3 text-sm leading-6 text-slate-200">
           <p className="font-black text-primary">How it works</p>
@@ -1068,6 +1090,22 @@ function Rooms({
           placeholder="Your name"
           maxLength={24}
         />
+        <label className="mt-4 block text-sm font-bold text-slate-300" htmlFor="room-deck">
+          Room deck
+        </label>
+        <select
+          id="room-deck"
+          value={room?.deckCategory ?? roomDeckCategory}
+          onChange={(event) => setRoomDeckCategory(event.target.value)}
+          disabled={Boolean(room)}
+          className="mt-2 h-14 w-full rounded-[8px] border border-white/10 bg-white/10 px-4 font-bold outline-none focus:border-primary disabled:opacity-60"
+        >
+          {decks.map((deck) => (
+            <option key={deck.category} value={deck.category}>
+              {deck.category} - 10 items
+            </option>
+          ))}
+        </select>
         <label className="mt-4 block text-sm font-bold text-slate-300" htmlFor="room">
           Room code
         </label>

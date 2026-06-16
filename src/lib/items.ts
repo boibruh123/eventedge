@@ -45,7 +45,7 @@ const deckSeeds: DeckSeed[] = [
     ]
   },
   {
-    category: "Fast Food Meals",
+    category: "Fast Food",
     imageQuery: "fast food meal",
     source: "https://www.fastfoodmenuprices.com/",
     items: [
@@ -327,7 +327,7 @@ const deckSeeds: DeckSeed[] = [
     ]
   },
   {
-    category: "Home Decor",
+    category: "Home Décor",
     imageQuery: "home decor",
     source: "https://www.wayfair.com/decor-pillows/",
     items: [
@@ -640,7 +640,7 @@ const deckSeeds: DeckSeed[] = [
     ]
   },
   {
-    category: "Pokemon Cards",
+    category: "Pokémon Cards",
     imageQuery: "pokemon trading card",
     source: "https://www.pricecharting.com/category/pokemon-cards",
     difficulty: "Insane",
@@ -1166,6 +1166,67 @@ export const categoryDecks = deckSeeds.map((deck) => ({
 }));
 
 export const fallbackItems: GameItem[] = categoryDecks.flatMap((deck) => deck.items);
+
+export const deckSections = [
+  {
+    title: "Everyday Items",
+    categories: ["Groceries", "Fast Food", "Household Products", "School Supplies", "Pet Supplies"]
+  },
+  {
+    title: "📱 Technology",
+    categories: ["Smartphones", "Laptops", "Gaming Consoles", "Headphones", "Smart Home Devices"]
+  },
+  {
+    title: "🚗 Vehicles",
+    categories: ["Cars", "Motorcycles", "Boats", "RVs", "Luxury Vehicles"]
+  },
+  {
+    title: "🏠 Home & Living",
+    categories: ["Furniture", "Appliances", "Home Décor", "Mattresses", "Kitchen Gadgets"]
+  },
+  {
+    title: "👕 Fashion",
+    categories: ["Sneakers", "Designer Handbags", "Watches", "Sunglasses", "Clothing"]
+  },
+  {
+    title: "🍔 Food & Drinks",
+    categories: ["Restaurant Meals", "Specialty Coffee", "Snacks", "Alcoholic Beverages", "Desserts"]
+  },
+  {
+    title: "⚾ Sports & Recreation",
+    categories: ["Sports Equipment", "Golf Clubs", "Baseball Bats", "Bicycles", "Gym Equipment"]
+  },
+  {
+    title: "🎮 Gaming & Collectibles",
+    categories: ["Pokémon Cards", "Video Games", "Funko Pops", "LEGO Sets", "Trading Cards"]
+  },
+  {
+    title: "🏝️ Travel",
+    categories: ["Airline Tickets", "Hotel Rooms", "Cruises", "Vacation Packages", "Theme Park Tickets"]
+  },
+  {
+    title: "💎 Luxury",
+    categories: ["Diamonds", "Yachts", "Supercars", "Luxury Watches", "Rare Collectibles"]
+  },
+  {
+    title: "🏗️ Crazy Expensive",
+    categories: ["Private Jets", "Mansions", "Famous Paintings", "Race Horses", "Space Tourism Tickets"]
+  },
+  {
+    title: "😂 Funny Categories",
+    categories: ["Weird Amazon Products", "Celebrity Purchases", "Shark Tank Products", "World's Largest Items", "Viral TikTok Products"]
+  },
+  {
+    title: "🔥 Most Addicting Categories",
+    categories: ["Sneakers", "Cars", "Fast Food", "Smartphones", "Celebrity Purchases", "Luxury Watches", "Houses", "Pokémon Cards", "Travel Destinations", "Random Amazon Finds"]
+  }
+];
+
+export function mergeWithDefaultDecks(items: GameItem[]) {
+  const seen = new Set(items.map((item) => item.id));
+  const missingDefaults = fallbackItems.filter((item) => !seen.has(item.id));
+  return [...items, ...missingDefaults];
+}
 
 function hashString(value: string) {
   return value.split("").reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0);

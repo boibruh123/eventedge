@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fallbackItems } from "@/lib/items";
+import { fallbackItems, mergeWithDefaultDecks } from "@/lib/items";
 import { getServiceSupabase } from "@/lib/supabase";
 
 export async function GET() {
@@ -15,7 +15,7 @@ export async function GET() {
     return NextResponse.json({ items: fallbackItems, source: "fallback", error: error.message }, { status: 200 });
   }
 
-  return NextResponse.json({ items: data, source: "supabase" });
+  return NextResponse.json({ items: mergeWithDefaultDecks(data), source: "supabase" });
 }
 
 export async function POST(request: Request) {

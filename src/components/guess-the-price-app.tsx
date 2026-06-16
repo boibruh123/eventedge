@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { defaultAds } from "@/lib/ads";
 import { CONTENT_KEYS } from "@/lib/content-store";
-import { getDailyItems, getDecks } from "@/lib/items";
+import { deckSections, getDailyItems, getDecks, mergeWithDefaultDecks } from "@/lib/items";
 import { formatCurrency, formatPercent, scoreGuess } from "@/lib/scoring";
 import type { AdPlacement, GameItem, LeaderboardEntry, RoundResult } from "@/lib/types";
 
@@ -141,14 +141,14 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       const savedItems = window.localStorage.getItem(CONTENT_KEYS.items);
       const savedAds = window.localStorage.getItem(CONTENT_KEYS.ads);
 
-      if (savedItems) setCatalog(JSON.parse(savedItems) as GameItem[]);
+      if (savedItems) setCatalog(mergeWithDefaultDecks(JSON.parse(savedItems) as GameItem[]));
       if (savedAds) setAds(JSON.parse(savedAds) as AdPlacement[]);
 
       const [itemsResponse, adsResponse] = await Promise.allSettled([fetch("/api/items"), fetch("/api/ads")]);
 
       if (itemsResponse.status === "fulfilled" && itemsResponse.value.ok && !savedItems) {
         const payload = await itemsResponse.value.json();
-        if (Array.isArray(payload.items)) setCatalog(payload.items);
+        if (Array.isArray(payload.items)) setCatalog(mergeWithDefaultDecks(payload.items));
       }
 
       if (adsResponse.status === "fulfilled" && adsResponse.value.ok && !savedAds) {
@@ -161,7 +161,7 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       if (event && event.key && event.key !== CONTENT_KEYS.items && event.key !== CONTENT_KEYS.ads) return;
       const savedItems = window.localStorage.getItem(CONTENT_KEYS.items);
       const savedAds = window.localStorage.getItem(CONTENT_KEYS.ads);
-      if (savedItems) setCatalog(JSON.parse(savedItems) as GameItem[]);
+      if (savedItems) setCatalog(mergeWithDefaultDecks(JSON.parse(savedItems) as GameItem[]));
       if (savedAds) setAds(JSON.parse(savedAds) as AdPlacement[]);
     }
 
@@ -884,6 +884,13 @@ function Games({
   onStartGame: (title: string, selectedItems: GameItem[], mode: GameMode) => void;
 }) {
   const categoryGroups = getDecks(catalog);
+  const deckMap = new Map(categoryGroups.map((deck) => [deck.category, deck]));
+  const groupedSections = deckSections.map((section) => ({
+    ...section,
+    decks: section.categories
+      .map((category) => deckMap.get(category))
+      .filter((deck): deck is { category: string; items: GameItem[] } => Boolean(deck))
+  }));
 
   const pastDays = Array.from({ length: 7 }, (_, index) => {
     const date = new Date();
@@ -947,23 +954,31 @@ function Games({
         </div>
       </div>
 
-      <div>
-        <div className="mb-4 flex items-center justify-between">
+      <div className="space-y-9">
+        <div className="flex items-center justify-between">
           <h3 className="text-2xl font-black">Category games</h3>
-          <span className="text-sm font-bold text-slate-500">{categoryGroups.length} sections</span>
+          <span className="text-sm font-bold text-slate-500">{categoryGroups.length} decks</span>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {categoryGroups.map(({ category, items }) => (
-            <GameCard
-              key={category}
-              title={category}
-              detail="10-item category challenge"
-              count={10}
-              image={items[0]?.image}
-              onClick={() => onStartGame(`${category} Game`, items, "category")}
-            />
-          ))}
-        </div>
+        {groupedSections.map((section) => (
+          <section key={section.title}>
+            <div className="mb-4 flex items-center justify-between">
+              <h4 className="text-2xl font-black">{section.title}</h4>
+              <span className="text-sm font-bold text-slate-500">{section.decks.length} decks</span>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {section.decks.map(({ category, items }) => (
+                <GameCard
+                  key={`${section.title}-${category}`}
+                  title={category}
+                  detail="10-item category challenge"
+                  count={10}
+                  image={items[0]?.image}
+                  onClick={() => onStartGame(`${category} Game`, items, "category")}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
     </section>
   );
@@ -1064,6 +1079,13 @@ function Rooms({
 }) {
   const seats = Array.from({ length: 6 }, (_, index) => room?.players[index] ?? null);
   const isFull = (room?.players.length ?? 0) >= 6;
+  const deckMap = new Map(decks.map((deck) => [deck.category, deck]));
+  const roomDeckSections = deckSections.map((section) => ({
+    ...section,
+    decks: section.categories
+      .map((category) => deckMap.get(category))
+      .filter((deck): deck is { category: string; items: GameItem[] } => Boolean(deck))
+  }));
 
   return (
     <section className="mx-auto grid w-full max-w-7xl gap-5 px-5 pb-12 lg:grid-cols-[420px_1fr]">
@@ -1100,10 +1122,15 @@ function Rooms({
           disabled={Boolean(room)}
           className="mt-2 h-14 w-full rounded-[8px] border border-white/10 bg-white/10 px-4 font-bold outline-none focus:border-primary disabled:opacity-60"
         >
-          {decks.map((deck) => (
-            <option key={deck.category} value={deck.category}>
-              {deck.category} - 10 items
-            </option>
+          <option value="Daily Challenge">Daily Challenge - 10 items</option>
+          {roomDeckSections.map((section) => (
+            <optgroup key={section.title} label={section.title}>
+              {section.decks.map((deck) => (
+                <option key={`${section.title}-${deck.category}`} value={deck.category}>
+                  {deck.category} - 10 items
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <label className="mt-4 block text-sm font-bold text-slate-300" htmlFor="room">

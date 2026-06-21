@@ -1214,9 +1214,47 @@ const categoryPhotoIds: Record<string, string> = {
 };
 
 function imageFor(category: string, title: string, imageQuery: string, index: number) {
-  const photoId = categoryPhotoIds[category] ?? "photo-1498050108023-c5249f4df085";
   const signature = Math.abs(`${category}-${title}-${imageQuery}`.split("").reduce((sum, char) => sum + char.charCodeAt(0), index + 1000));
-  return `https://images.unsplash.com/${photoId}?auto=format&fit=crop&w=1200&h=800&q=80&ixid=${signature}`;
+  const hue = signature % 360;
+  const accentHue = (hue + 42) % 360;
+  const titleParts = title.split(" ");
+  const titleLineOne = titleParts.slice(0, 4).join(" ");
+  const titleLineTwo = titleParts.slice(4, 8).join(" ");
+  const escapedCategory = category.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const escapedLineOne = titleLineOne.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const escapedLineTwo = titleLineTwo.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="hsl(${hue}, 78%, 38%)"/>
+          <stop offset="48%" stop-color="#0B1120"/>
+          <stop offset="100%" stop-color="hsl(${accentHue}, 82%, 44%)"/>
+        </linearGradient>
+        <radialGradient id="glow" cx="32%" cy="24%" r="65%">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.56)"/>
+          <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+        </radialGradient>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000" flood-opacity="0.32"/>
+        </filter>
+      </defs>
+      <rect width="1200" height="800" fill="url(#bg)"/>
+      <rect width="1200" height="800" fill="url(#glow)" opacity="0.72"/>
+      <circle cx="1030" cy="130" r="210" fill="#00D4FF" opacity="0.22"/>
+      <circle cx="150" cy="650" r="260" fill="#FF6B00" opacity="0.2"/>
+      <g filter="url(#shadow)">
+        <rect x="190" y="145" width="820" height="510" rx="44" fill="rgba(255,255,255,0.13)" stroke="rgba(255,255,255,0.38)" stroke-width="3"/>
+        <rect x="255" y="210" width="690" height="96" rx="26" fill="rgba(255,255,255,0.18)"/>
+        <rect x="300" y="355" width="600" height="46" rx="23" fill="rgba(255,255,255,0.22)"/>
+        <rect x="360" y="435" width="480" height="46" rx="23" fill="rgba(255,255,255,0.16)"/>
+      </g>
+      <text x="600" y="270" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="800" text-anchor="middle" letter-spacing="3">${escapedCategory}</text>
+      <text x="600" y="560" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="900" text-anchor="middle">${escapedLineOne}</text>
+      <text x="600" y="625" fill="#DDEBFF" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800" text-anchor="middle">${escapedLineTwo}</text>
+    </svg>`;
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 export const categoryDecks = deckSeeds.map((deck) => ({

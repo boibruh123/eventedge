@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import type { ReactElement, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -1064,14 +1063,12 @@ function SafeImage({
   }
 
   return (
-    <Image
+    <img
       src={src}
       alt={alt}
-      fill
-      unoptimized
-      priority={priority}
-      className={className}
-      sizes={sizes}
+      className={`absolute inset-0 h-full w-full ${className ?? ""}`}
+      loading={priority ? "eager" : "lazy"}
+      decoding="async"
       onError={() => setFailed(true)}
     />
   );

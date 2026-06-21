@@ -1148,8 +1148,8 @@ function slugify(value: string) {
 
 function imageFor(category: string, title: string, imageQuery: string, index: number) {
   const query = encodeURIComponent(`${title} ${imageQuery}`.toLowerCase());
-  const lock = Math.abs(`${category}-${title}`.split("").reduce((sum, char) => sum + char.charCodeAt(0), index + 1000));
-  return `https://loremflickr.com/1200/800/${query}?lock=${lock}`;
+  const signature = Math.abs(`${category}-${title}`.split("").reduce((sum, char) => sum + char.charCodeAt(0), index + 1000));
+  return `https://source.unsplash.com/1200x800/?${query}&sig=${signature}`;
 }
 
 export const categoryDecks = deckSeeds.map((deck) => ({
@@ -1223,9 +1223,8 @@ export const deckSections = [
 ];
 
 export function mergeWithDefaultDecks(items: GameItem[]) {
-  const seen = new Set(items.map((item) => item.id));
-  const missingDefaults = fallbackItems.filter((item) => !seen.has(item.id));
-  return [...items, ...missingDefaults];
+  const customItems = items.filter((item) => !fallbackItems.some((defaultItem) => defaultItem.id === item.id));
+  return [...fallbackItems, ...customItems];
 }
 
 function hashString(value: string) {

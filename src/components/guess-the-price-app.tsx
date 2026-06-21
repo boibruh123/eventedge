@@ -508,13 +508,14 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
           <div className="space-y-4">
             <div className="glass relative overflow-hidden rounded-[8px] p-4 shadow-2xl">
               <div className="relative aspect-[4/5] overflow-hidden rounded-[8px]">
-                <Image
+                <SafeImage
                   src={dailyItems[0].image}
                   alt={dailyItems[0].title}
-                  fill
-                  priority
+                  title={dailyItems[0].title}
+                  category={dailyItems[0].category}
                   className="object-cover"
                   sizes="(min-width: 1024px) 40vw, 90vw"
+                  priority
                 />
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-night via-night/75 to-transparent p-5">
                   <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-primary">
@@ -560,12 +561,14 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
                   </span>
                 </div>
                 <div className="relative aspect-[16/10] min-h-[360px] overflow-hidden">
-                  <Image
+                  <SafeImage
                     src={current.image}
                     alt={current.title}
-                    fill
+                    title={current.title}
+                    category={current.category}
                     className="object-cover"
                     sizes="(min-width: 1024px) 70vw, 100vw"
+                    priority
                   />
                   <div className="absolute left-4 top-4 rounded-[8px] bg-night px-3 py-2 text-sm font-bold">
                     {current.category}
@@ -1007,7 +1010,16 @@ function GameCard({
       }`}
     >
       <div className={`relative overflow-hidden bg-white/10 ${featured ? "min-h-64 sm:order-2" : "h-40"}`}>
-        {image && <Image src={image} alt={title} fill className="object-cover transition group-hover:scale-105" sizes="(min-width: 1024px) 25vw, 90vw" />}
+        {image && (
+          <SafeImage
+            src={image}
+            alt={title}
+            title={title}
+            category={detail}
+            className="object-cover transition group-hover:scale-105"
+            sizes="(min-width: 1024px) 25vw, 90vw"
+          />
+        )}
       </div>
       <div className="p-4">
         <p className="text-sm font-bold text-primary">{count} guesses</p>
@@ -1018,6 +1030,50 @@ function GameCard({
         </span>
       </div>
     </button>
+  );
+}
+
+function SafeImage({
+  src,
+  alt,
+  title,
+  category,
+  className,
+  sizes,
+  priority
+}: {
+  src: string;
+  alt: string;
+  title: string;
+  category: string;
+  className?: string;
+  sizes: string;
+  priority?: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_top_left,rgba(0,212,255,0.28),transparent_34%),linear-gradient(135deg,#101827,#18233a_46%,#0B1120)] p-5 text-center">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-primary">{category}</p>
+          <p className="mt-3 text-2xl font-black text-white">{title}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      fill
+      unoptimized
+      priority={priority}
+      className={className}
+      sizes={sizes}
+      onError={() => setFailed(true)}
+    />
   );
 }
 

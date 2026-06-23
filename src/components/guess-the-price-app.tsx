@@ -1116,7 +1116,7 @@ function SafeImage({
   const fallback = (
     <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_top_left,rgba(0,212,255,0.28),transparent_34%),linear-gradient(135deg,#101827,#18233a_46%,#0B1120)] p-5 text-center">
       <div>
-        <p className="text-sm font-black uppercase tracking-[0.2em] text-primary">{category}</p>
+        <p className="text-sm font-black uppercase tracking-[0.2em] text-primary">{failed ? "Photo unavailable" : category}</p>
         <p className="mt-3 text-2xl font-black text-white">{title}</p>
       </div>
     </div>

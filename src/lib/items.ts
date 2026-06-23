@@ -1146,115 +1146,15 @@ function slugify(value: string) {
     .replace(/(^-|-$)/g, "");
 }
 
-const categoryPhotoIds: Record<string, string> = {
-  "Everyday Items": "photo-1584473457409-cef4dd8c9fdc",
-  Groceries: "photo-1542838132-92c53300491e",
-  "Fast Food": "photo-1568901346375-23c9450c58cd",
-  "Household Products": "photo-1585421514284-efb74c2b69ba",
-  "School Supplies": "photo-1516321497487-e288fb19713f",
-  "Pet Supplies": "photo-1601758124510-52d02ddb7cbd",
-  Smartphones: "photo-1511707171634-5f897ff02aa9",
-  Laptops: "photo-1516321318423-f06f85e504b3",
-  "Gaming Consoles": "photo-1606144042614-b2417e99c4e3",
-  Headphones: "photo-1505740420928-5e560c06d30e",
-  "Smart Home Devices": "photo-1558002038-1055907df827",
-  Cars: "photo-1492144534655-ae79c964c9d7",
-  Motorcycles: "photo-1558981806-ec527fa84c39",
-  Boats: "photo-1500375592092-40eb2168fd21",
-  RVs: "photo-1523983302122-73e869e1f850",
-  "Luxury Vehicles": "photo-1503376780353-7e6692767b70",
-  Furniture: "photo-1555041469-a586c61ea9bc",
-  Appliances: "photo-1556911220-bff31c812dba",
-  "Home Décor": "photo-1513519245088-0e12902e5a38",
-  Mattresses: "photo-1505693416388-ac5ce068fe85",
-  "Kitchen Gadgets": "photo-1556911220-e15b29be8c8f",
-  Sneakers: "photo-1542291026-7eec264c27ff",
-  "Designer Handbags": "photo-1584917865442-de89df76afd3",
-  Watches: "photo-1523275335684-37898b6baf30",
-  Sunglasses: "photo-1572635196237-14b3f281503f",
-  Clothing: "photo-1445205170230-053b83016050",
-  "Restaurant Meals": "photo-1504674900247-0877df9cc836",
-  "Specialty Coffee": "photo-1495474472287-4d71bcdd2085",
-  Snacks: "photo-1621939514649-280e2ee25f60",
-  "Alcoholic Beverages": "photo-1510812431401-41d2bd2722f3",
-  Desserts: "photo-1551024506-0bccd828d307",
-  "Sports Equipment": "photo-1517649763962-0c623066013b",
-  "Golf Clubs": "photo-1535131749006-b7f58c99034b",
-  "Baseball Bats": "photo-1562771242-a02d9090c90c",
-  Bicycles: "photo-1485965120184-e220f721d03e",
-  "Gym Equipment": "photo-1534438327276-14e5300c3a48",
-  "Pokémon Cards": "photo-1613771404784-3a5686aa2be3",
-  "Video Games": "photo-1550745165-9bc0b252726f",
-  "Funko Pops": "photo-1635805737707-575885ab0820",
-  "LEGO Sets": "photo-1587654780291-39c9404d746b",
-  "Trading Cards": "photo-1606761568499-6d2451b23c66",
-  "Airline Tickets": "photo-1436491865332-7a61a109cc05",
-  "Hotel Rooms": "photo-1566073771259-6a8506099945",
-  Cruises: "photo-1548574505-5e239809ee19",
-  "Vacation Packages": "photo-1507525428034-b723cf961d3e",
-  "Theme Park Tickets": "photo-1597466599360-3b9775841aec",
-  Diamonds: "photo-1515562141207-7a88fb7ce338",
-  Yachts: "photo-1567899378494-47b22a2ae96a",
-  Supercars: "photo-1503376780353-7e6692767b70",
-  "Luxury Watches": "photo-1523170335258-f5ed11844a49",
-  "Rare Collectibles": "photo-1524230572899-a752b3835840",
-  "Private Jets": "photo-1540962351504-03099e0a754b",
-  Mansions: "photo-1600596542815-ffad4c1539a9",
-  "Famous Paintings": "photo-1541961017774-22349e4a1262",
-  "Race Horses": "photo-1553284965-83fd3e82fa5a",
-  "Space Tourism Tickets": "photo-1446776811953-b23d57bd21aa",
-  "Weird Amazon Products": "photo-1523474253046-8cd2748b5fd2",
-  "Celebrity Purchases": "photo-1515886657613-9f3515b0c78f",
-  "Shark Tank Products": "photo-1526947425960-945c6e72858f",
-  "World's Largest Items": "photo-1500530855697-b586d89ba3ee",
-  "Viral TikTok Products": "photo-1516321318423-f06f85e504b3",
-  Houses: "photo-1564013799919-ab600027ffc6",
-  "Travel Destinations": "photo-1507525428034-b723cf961d3e",
-  "Random Amazon Finds": "photo-1523474253046-8cd2748b5fd2"
-};
-
 function imageFor(category: string, title: string, imageQuery: string, index: number) {
-  const signature = Math.abs(`${category}-${title}-${imageQuery}`.split("").reduce((sum, char) => sum + char.charCodeAt(0), index + 1000));
-  const hue = signature % 360;
-  const accentHue = (hue + 42) % 360;
-  const titleParts = title.split(" ");
-  const titleLineOne = titleParts.slice(0, 4).join(" ");
-  const titleLineTwo = titleParts.slice(4, 8).join(" ");
-  const escapedCategory = category.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const escapedLineOne = titleLineOne.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const escapedLineTwo = titleLineTwo.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
-      <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="hsl(${hue}, 78%, 38%)"/>
-          <stop offset="48%" stop-color="#0B1120"/>
-          <stop offset="100%" stop-color="hsl(${accentHue}, 82%, 44%)"/>
-        </linearGradient>
-        <radialGradient id="glow" cx="32%" cy="24%" r="65%">
-          <stop offset="0%" stop-color="rgba(255,255,255,0.56)"/>
-          <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
-        </radialGradient>
-        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000" flood-opacity="0.32"/>
-        </filter>
-      </defs>
-      <rect width="1200" height="800" fill="url(#bg)"/>
-      <rect width="1200" height="800" fill="url(#glow)" opacity="0.72"/>
-      <circle cx="1030" cy="130" r="210" fill="#00D4FF" opacity="0.22"/>
-      <circle cx="150" cy="650" r="260" fill="#FF6B00" opacity="0.2"/>
-      <g filter="url(#shadow)">
-        <rect x="190" y="145" width="820" height="510" rx="44" fill="rgba(255,255,255,0.13)" stroke="rgba(255,255,255,0.38)" stroke-width="3"/>
-        <rect x="255" y="210" width="690" height="96" rx="26" fill="rgba(255,255,255,0.18)"/>
-        <rect x="300" y="355" width="600" height="46" rx="23" fill="rgba(255,255,255,0.22)"/>
-        <rect x="360" y="435" width="480" height="46" rx="23" fill="rgba(255,255,255,0.16)"/>
-      </g>
-      <text x="600" y="270" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="800" text-anchor="middle" letter-spacing="3">${escapedCategory}</text>
-      <text x="600" y="560" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="900" text-anchor="middle">${escapedLineOne}</text>
-      <text x="600" y="625" fill="#DDEBFF" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800" text-anchor="middle">${escapedLineTwo}</text>
-    </svg>`;
+  const params = new URLSearchParams({
+    title,
+    category,
+    q: imageQuery,
+    v: String(index)
+  });
 
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  return `/api/photo?${params.toString()}`;
 }
 
 export const categoryDecks = deckSeeds.map((deck) => ({

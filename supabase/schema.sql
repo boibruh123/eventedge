@@ -36,7 +36,7 @@ create table if not exists public.ads (
 create table if not exists public.daily_challenges (
   id uuid primary key default gen_random_uuid(),
   challenge_date date not null unique,
-  item_ids uuid[] not null,
+  item_ids text[] not null,
   featured_sponsor text,
   created_at timestamptz default now()
 );
@@ -68,11 +68,22 @@ create table if not exists public.multiplayer_rooms (
   id uuid primary key default gen_random_uuid(),
   room_code text not null unique,
   host_user_id uuid references public.users(id) on delete set null,
-  item_ids uuid[] not null,
+  title text not null default 'Daily Challenge',
+  deck_category text not null default 'Daily Challenge',
+  item_ids text[] not null,
   status text not null default 'waiting' check (status in ('waiting', 'playing', 'complete')),
+  max_players integer not null default 6 check (max_players between 1 and 6),
   live_scores jsonb not null default '{}'::jsonb,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  expires_at timestamptz default (now() + interval '12 hours')
 );
+
+create index if not exists idx_items_category on public.items(category);
+create index if not exists idx_leaderboards_score on public.leaderboards(period, mode, score desc, created_at desc);
+create index if not exists idx_game_sessions_created_at on public.game_sessions(created_at desc);
+create index if not exists idx_multiplayer_rooms_code_status on public.multiplayer_rooms(room_code, status);
+create index if not exists idx_multiplayer_rooms_expires_at on public.multiplayer_rooms(expires_at);
 
 alter table public.users enable row level security;
 alter table public.items enable row level security;
@@ -90,3 +101,4 @@ create policy "Players can create sessions" on public.game_sessions for insert w
 create policy "Players can create leaderboard entries" on public.leaderboards for insert with check (true);
 create policy "Players can create rooms" on public.multiplayer_rooms for insert with check (true);
 create policy "Rooms are public to read" on public.multiplayer_rooms for select using (true);
+create policy "Players can update active rooms" on public.multiplayer_rooms for update using (expires_at > now()) with check (expires_at > now());

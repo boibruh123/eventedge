@@ -41,6 +41,9 @@ type RoomState = {
   deckCategory: string;
   items: GameItem[];
   players: RoomPlayer[];
+  hostId: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type Props = {
@@ -65,12 +68,41 @@ function roomKey(code: string) {
 }
 
 function makeRoomCode() {
-  return `PRICE-${Math.floor(1000 + Math.random() * 9000)}`;
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(6);
+  window.crypto?.getRandomValues(bytes);
+  const suffix = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+  return `PRICE-${suffix}`;
 }
 
 function roomChannel() {
   if (typeof window === "undefined" || !("BroadcastChannel" in window)) return null;
   return new BroadcastChannel("guesstheprice:rooms");
+}
+
+function parseJson<T>(value: string | null) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function cleanName(value: string, fallback: string) {
+  return value.trim().replace(/[^\w .'-]/g, "").slice(0, 24) || fallback;
+}
+
+function cleanupOldRooms() {
+  const now = Date.now();
+  const maxAge = 12 * 60 * 60 * 1000;
+  Object.keys(window.localStorage)
+    .filter((key) => key.startsWith("guesstheprice:room:"))
+    .forEach((key) => {
+      const savedRoom = parseJson<RoomState>(window.localStorage.getItem(key));
+      const updatedAt = savedRoom?.updatedAt ? new Date(savedRoom.updatedAt).getTime() : 0;
+      if (!savedRoom || now - updatedAt > maxAge) window.localStorage.removeItem(key);
+    });
 }
 
 export function GuessThePriceApp({ items, leaderboard }: Props) {
@@ -121,14 +153,16 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     defaultAds.find((ad) => ad.placement === placement && ad.active);
 
   useEffect(() => {
+    cleanupOldRooms();
     const savedLeaders = window.localStorage.getItem(leaderboardKey(date));
-    if (savedLeaders) setLocalLeaders(JSON.parse(savedLeaders) as LeaderboardEntry[]);
+    const parsedLeaders = parseJson<LeaderboardEntry[]>(savedLeaders);
+    if (parsedLeaders) setLocalLeaders(parsedLeaders);
 
     const saved = window.localStorage.getItem(lockKey(date));
     if (saved) {
       setDailyComplete(true);
-      const parsed = JSON.parse(saved) as LeaderboardEntry;
-      if (parsed.player_name !== "Pending") {
+      const parsed = parseJson<LeaderboardEntry>(saved);
+      if (parsed && parsed.player_name !== "Pending") {
         setSubmitted(true);
         setPlayer(parsed.player_name);
       }
@@ -140,8 +174,10 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       const savedItems = window.localStorage.getItem(CONTENT_KEYS.items);
       const savedAds = window.localStorage.getItem(CONTENT_KEYS.ads);
 
-      if (savedItems) setCatalog(mergeWithDefaultDecks(JSON.parse(savedItems) as GameItem[]));
-      if (savedAds) setAds(JSON.parse(savedAds) as AdPlacement[]);
+      const parsedItems = parseJson<GameItem[]>(savedItems);
+      const parsedAds = parseJson<AdPlacement[]>(savedAds);
+      if (parsedItems) setCatalog(mergeWithDefaultDecks(parsedItems));
+      if (parsedAds) setAds(parsedAds);
 
       const [itemsResponse, adsResponse] = await Promise.allSettled([fetch("/api/items"), fetch("/api/ads")]);
 
@@ -160,8 +196,10 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
       if (event && event.key && event.key !== CONTENT_KEYS.items && event.key !== CONTENT_KEYS.ads) return;
       const savedItems = window.localStorage.getItem(CONTENT_KEYS.items);
       const savedAds = window.localStorage.getItem(CONTENT_KEYS.ads);
-      if (savedItems) setCatalog(mergeWithDefaultDecks(JSON.parse(savedItems) as GameItem[]));
-      if (savedAds) setAds(JSON.parse(savedAds) as AdPlacement[]);
+      const parsedItems = parseJson<GameItem[]>(savedItems);
+      const parsedAds = parseJson<AdPlacement[]>(savedAds);
+      if (parsedItems) setCatalog(mergeWithDefaultDecks(parsedItems));
+      if (parsedAds) setAds(parsedAds);
     }
 
     const contentHandler = () => syncFromStorage();
@@ -214,7 +252,8 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
     function syncRoom(event?: StorageEvent) {
       if (event && event.key !== activeRoomKey) return;
       const saved = window.localStorage.getItem(activeRoomKey);
-      if (saved) applyRoomUpdate(JSON.parse(saved) as RoomState);
+      const savedRoom = parseJson<RoomState>(saved);
+      if (savedRoom) applyRoomUpdate(savedRoom);
     }
 
     function syncBroadcast(event: MessageEvent<RoomState>) {
@@ -233,10 +272,21 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   }, [gameMode, room]);
 
   function publishRoom(nextRoom: RoomState) {
-    setRoom(nextRoom);
-    window.localStorage.setItem(roomKey(nextRoom.code), JSON.stringify(nextRoom));
+    const safeRoom = {
+      ...nextRoom,
+      players: nextRoom.players.slice(0, 6),
+      updatedAt: new Date().toISOString()
+    };
+    setRoom(safeRoom);
+    cleanupOldRooms();
+    try {
+      window.localStorage.setItem(roomKey(safeRoom.code), JSON.stringify(safeRoom));
+    } catch {
+      cleanupOldRooms();
+      window.localStorage.setItem(roomKey(safeRoom.code), JSON.stringify(safeRoom));
+    }
     const channel = roomChannel();
-    channel?.postMessage(nextRoom);
+    channel?.postMessage(safeRoom);
     channel?.close();
   }
 
@@ -298,29 +348,28 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   }
 
   function saveLeaderboardName() {
-    const cleanName = name.trim().slice(0, 24) || "Anonymous";
+    const cleanNameValue = cleanName(name, "Anonymous");
     const entry: LeaderboardEntry = {
       id: `${gameMode}-${date}-${Date.now()}`,
-      player_name: cleanName,
+      player_name: cleanNameValue,
       score: finalScore,
       accuracy: Number(averageAccuracy.toFixed(1)),
       mode: gameMode === "category" || gameMode === "archive" ? "classic" : gameMode,
       created_at: date
     };
-    const savedLeaders = window.localStorage.getItem(leaderboardKey(date));
-    const previousLeaders = savedLeaders ? (JSON.parse(savedLeaders) as LeaderboardEntry[]) : [];
-    const nextLeaders = [entry, ...previousLeaders].sort((a, b) => b.score - a.score);
+    const previousLeaders = parseJson<LeaderboardEntry[]>(window.localStorage.getItem(leaderboardKey(date))) ?? [];
+    const nextLeaders = [entry, ...previousLeaders].sort((a, b) => b.score - a.score).slice(0, 250);
 
     if (gameMode === "daily") window.localStorage.setItem(lockKey(date), JSON.stringify(entry));
     window.localStorage.setItem(leaderboardKey(date), JSON.stringify(nextLeaders));
     setLocalLeaders(nextLeaders);
-    setPlayer(cleanName);
+    setPlayer(cleanNameValue);
     if (gameMode === "multiplayer" && room) {
       const updatedRoom = {
         ...room,
         players: room.players.map((roomPlayer, index) =>
           roomPlayer.id === roomPlayerId || (!roomPlayerId && index === 0)
-            ? { ...roomPlayer, name: cleanName, score: finalScore }
+            ? { ...roomPlayer, name: cleanNameValue, score: finalScore }
             : roomPlayer
         )
       };
@@ -331,21 +380,26 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   }
 
   function createRoom() {
-    const cleanName = roomName.trim().slice(0, 24) || player || "Host";
-    const code = makeRoomCode();
-    const playerId = `host-${Date.now()}`;
+    const cleanNameValue = cleanName(roomName || player, "Host");
+    let code = makeRoomCode();
+    while (window.localStorage.getItem(roomKey(code))) code = makeRoomCode();
+    const playerId = `host-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const now = new Date().toISOString();
     const nextRoom: RoomState = {
       code,
       status: "waiting",
       title: selectedRoomDeck.title,
       deckCategory: selectedRoomDeck.category,
       items: selectedRoomDeck.items,
-      players: [{ id: playerId, name: cleanName, score: 0 }]
+      players: [{ id: playerId, name: cleanNameValue, score: 0 }],
+      hostId: playerId,
+      createdAt: now,
+      updatedAt: now
     };
 
     setRoomCode(code);
-    setPlayer(cleanName);
-    setRoomName(cleanName);
+    setPlayer(cleanNameValue);
+    setRoomName(cleanNameValue);
     setRoomPlayerId(playerId);
     setRoomMessage(`Room ${code} created for ${selectedRoomDeck.title}. Share this code with up to 5 friends.`);
     publishRoom(nextRoom);
@@ -353,28 +407,32 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
 
   function joinRoom() {
     const code = roomCode.trim().toUpperCase();
-    const cleanName = roomName.trim().slice(0, 24) || player || "Player";
-    const saved = window.localStorage.getItem(roomKey(code));
+    const cleanNameValue = cleanName(roomName || player, "Player");
+    const savedRoom = parseJson<RoomState>(window.localStorage.getItem(roomKey(code)));
 
-    if (!saved) {
+    if (!savedRoom) {
       setRoomMessage("No room found with that code in this browser. Create it first or check the code.");
       return;
     }
 
-    const savedRoom = JSON.parse(saved) as RoomState;
-    if (savedRoom.players.length >= 6 && !savedRoom.players.some((roomPlayer) => roomPlayer.name === cleanName)) {
+    if (savedRoom.status !== "waiting") {
+      setRoomMessage("This room already started. Create a new room for another game.");
+      return;
+    }
+
+    if (savedRoom.players.length >= 6 && !savedRoom.players.some((roomPlayer) => roomPlayer.name === cleanNameValue)) {
       setRoomMessage("This room is full. Rooms can have a maximum of 6 players.");
       return;
     }
 
-    const existingPlayer = savedRoom.players.find((roomPlayer) => roomPlayer.name === cleanName);
-    const playerId = existingPlayer?.id ?? `player-${Date.now()}`;
+    const existingPlayer = savedRoom.players.find((roomPlayer) => roomPlayer.name === cleanNameValue);
+    const playerId = existingPlayer?.id ?? `player-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const nextRoom = existingPlayer
       ? savedRoom
-      : { ...savedRoom, players: [...savedRoom.players, { id: playerId, name: cleanName, score: 0 }] };
+      : { ...savedRoom, players: [...savedRoom.players, { id: playerId, name: cleanNameValue, score: 0 }] };
 
-    setPlayer(cleanName);
-    setRoomName(cleanName);
+    setPlayer(cleanNameValue);
+    setRoomName(cleanNameValue);
     setRoomPlayerId(playerId);
     setRoomMessage(`Joined ${code}. ${nextRoom.players.length}/6 players are in.`);
     publishRoom(nextRoom);
@@ -395,6 +453,11 @@ export function GuessThePriceApp({ items, leaderboard }: Props) {
   function startRoomGame() {
     if (!room) {
       setRoomMessage("Create or join a room before starting.");
+      return;
+    }
+
+    if (room.hostId !== roomPlayerId) {
+      setRoomMessage("Only the host can start the room.");
       return;
     }
 
@@ -1050,27 +1113,29 @@ function SafeImage({
   priority?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
-
-  if (failed) {
-    return (
-      <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_top_left,rgba(0,212,255,0.28),transparent_34%),linear-gradient(135deg,#101827,#18233a_46%,#0B1120)] p-5 text-center">
-        <div>
-          <p className="text-sm font-black uppercase tracking-[0.2em] text-primary">{category}</p>
-          <p className="mt-3 text-2xl font-black text-white">{title}</p>
-        </div>
+  const fallback = (
+    <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_top_left,rgba(0,212,255,0.28),transparent_34%),linear-gradient(135deg,#101827,#18233a_46%,#0B1120)] p-5 text-center">
+      <div>
+        <p className="text-sm font-black uppercase tracking-[0.2em] text-primary">{category}</p>
+        <p className="mt-3 text-2xl font-black text-white">{title}</p>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <img
-      src={src}
-      alt={alt}
-      className={`absolute inset-0 h-full w-full ${className ?? ""}`}
-      loading={priority ? "eager" : "lazy"}
-      decoding="async"
-      onError={() => setFailed(true)}
-    />
+    <>
+      {fallback}
+      {!failed && (
+        <img
+          src={src}
+          alt={alt}
+          className={`absolute inset-0 h-full w-full ${className ?? ""}`}
+          loading={priority ? "eager" : "lazy"}
+          decoding="async"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </>
   );
 }
 

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import type { ReactElement, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -250,7 +249,7 @@ export function AdminDashboard({ items }: { items: GameItem[] }) {
               {catalog.map((item) => (
                 <div key={item.id} className="grid gap-4 border-b border-white/10 p-4 last:border-b-0 sm:grid-cols-[72px_1fr_auto] sm:items-center">
                   <button onClick={() => setSelectedId(item.id)} className="relative h-16 w-20 overflow-hidden rounded-[8px] bg-white/10" aria-label={`Edit ${item.title}`}>
-                    <Image src={item.image} alt={item.title} fill className="object-cover" sizes="80px" />
+                    <img src={item.image} alt={item.title} className="h-full w-full object-cover" loading="lazy" />
                   </button>
                   <div>
                     <p className="font-bold">{item.title}</p>
